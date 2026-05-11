@@ -1,17 +1,40 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
   <title>Saga</title>
   <link rel="stylesheet" href="styles.css">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.tu-backend.example.com;">
 </head>
 <body>
+  <header>
+    <h1>Saga</h1>
+    <p>Repositorio modular de capítulos, partes y notas</p>
+  </header>
+
   <main>
-    <section id="capitulos"></section>
-    <section id="partes"></section>
-    <section id="notas"></section>
+    <section id="capitulos" aria-labelledby="capitulos-title">
+      <h2 id="capitulos-title">Capítulos</h2>
+      <ul id="capitulos-list"></ul>
+    </section>
+
+    <section id="partes" aria-labelledby="partes-title">
+      <h2 id="partes-title">Partes</h2>
+      <ul id="partes-list"></ul>
+    </section>
+
+    <section id="notas" aria-labelledby="notas-title">
+      <h2 id="notas-title">Notas</h2>
+      <ul id="notas-list"></ul>
+    </section>
   </main>
-  <script src="app.js"></script>
+
+  <footer>
+    <small>© J — Mantén copias locales cifradas de tu manuscrito</small>
+  </footer>
+
+  <script src="app.js" defer></script>
 </body>
 </html>
