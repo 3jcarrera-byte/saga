@@ -169,7 +169,10 @@ fileInput.addEventListener('change', async (e) => {
         const res = await fetch('http://localhost:3000/api/upload', { method: 'POST', body: formData });
         const data = await res.json();
         statusInd.textContent = '';
-        appendMessage('assistant', `Cerebro: Documento "${file.name}" procesado.\nFragmentos RAG indexados: ${data.chunks}\nConceptos asimilados a memoria evolutiva: ${data.memoriesExtracted || 0}`);
+        
+        // Lectura segura con operadores de cortocircuito para evitar 'undefined' en la interfaz
+        appendMessage('assistant', `Cerebro: Documento "${file.name}" procesado.\nFragmentos RAG indexados: ${data.chunks || 0}\nConceptos asimilados a memoria evolutiva: ${data.memoriesExtracted || 0}`);
+        
         fetchMemoriesCache();
     } catch (err) {
         statusInd.textContent = 'Error al indexar.';
