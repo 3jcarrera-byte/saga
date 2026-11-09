@@ -25,7 +25,14 @@
         <!-- CANVAS 3: Biblioteca de Conocimiento de S.I.N.D.D.I. -->
         <div class="panel" id="canvas-3">
             <h3>🧠 Canvas 3: Biblioteca de Conocimiento</h3>
-            <div id="knowledge-library" class="knowledge-list">
+            
+            <!-- Área de ingesta de PDFs para alimentar la memoria local -->
+            <div class="upload-area" style="padding: 4px 0; border-bottom: 1px solid #334155; margin-bottom: 6px; display: flex; gap: 4px; align-items: center;">
+                <input type="file" id="pdf-file" accept=".pdf" style="font-size: 11px; width: 150px; color: #cbd5e1;">
+                <button id="btn-upload" style="background: #10b981; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">Asimilar</button>
+            </div>
+
+            <div id="knowledge-library" class="knowledge-list" style="overflow-y: auto; flex: 1;">
                 <!-- Conceptos asimilados de PDFs y memoria -->
             </div>
         </div>
@@ -68,6 +75,6 @@
     </div>
 
     <script src="canvas3d.js"></script>
-    <script src="chat.js"></script> <!-- O cámbialo a app.js si renombraste el archivo -->
+    <script src="chat.js"></script>
 </body>
 </html>
