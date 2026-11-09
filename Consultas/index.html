@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entorno de 7 Canvas 3D + Chat Central Gigante</title>
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- CORRECCIÓN 1: Enlace real y seguro a la librería Three.js desde CDNJS -->
+    <script src="https://cloudflare.com"></script>
+</head>
+<body>
+
+    <!-- Cuadrícula Matemática Estricta de 3x3 -->
+    <div id="grid-container">
+        <!-- Fila Superior -->
+        <div id="canvas-1" class="canvas-3d" data-label="Canvas 1 (Sup Izq)"></div>
+        <div id="canvas-4" class="canvas-3d" data-label="Canvas 4 (Sup Centro)"></div>
+        <div id="canvas-6" class="canvas-3d" data-label="Canvas 6 (Sup Der)"></div>
+
+        <!-- Fila Central e Inferior -->
+        <div id="canvas-2" class="canvas-3d" data-label="Canvas 2 (Centro Izq)"></div>
+        
+        <!-- CANVAS 5: El bloque central gigante asignado al CHAT INTEGRADO -->
+        <section id="chat-panel-center" class="main-giant">
+            <header class="chat-header">
+                <h3>Consola Central de Inteligencia</h3>
+            </header>
+            <div id="chat-messages"></div>
+            <div class="chat-controls">
+                <input type="text" id="user-input" placeholder="Comando: 'crea un anillo en canvas-4'...">
+                <button id="btn-send">Enviar</button>
+            </div>
+            <div class="chat-controls">
+                <input type="file" id="pdf-file" accept=".pdf" style="display:none;">
+                <button class="btn-secondary" onclick="document.getElementById('pdf-file').click()">📂 Seleccionar PDF</button>
+                <button id="btn-upload" class="btn-secondary">Cargar a JSON</button>
+            </div>
+        </section>
+
+        <div id="canvas-7" class="canvas-3d" data-label="Canvas 7 (Centro Der)"></div>
+
+        <div id="canvas-3" class="canvas-3d" data-label="Canvas 3 (Inf Izq)"></div>
+        <!-- El espacio de abajo al centro es absorbido automáticamente por el chat (Canvas 5) -->
+        <div id="canvas-8" class="canvas-3d" data-label="Canvas 8 (Inf Der)"></div>
+    </div>
+
+    <!-- Scripts de Lógica Modulares con ejecución diferida -->
+    <script src="canvas3d.js" defer></script>
+    <script src="chat.js" defer></script>
+</body>
+</html>
