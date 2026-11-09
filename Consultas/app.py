@@ -14,7 +14,13 @@ DB_PATH = "memorie.json"
 def init_db():
     if not os.path.exists(DB_PATH):
         with open(DB_PATH, 'w', encoding='utf-8') as f:
-            json.dump({"documentos": [], "internet": [], "historial": [], "errores_registrados": []}, f, indent=4)
+            json.dump({
+                "documentos": [], 
+                "internet": [], 
+                "historial": [], 
+                "errores_registrados": [],
+                "parches_pendientes": []
+            }, f, indent=4)
 
 def save_to_db(key, entry):
     with open(DB_PATH, 'r+', encoding='utf-8') as f:
@@ -29,6 +35,10 @@ def save_to_db(key, entry):
 def read_db():
     with open(DB_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+def actualizar_db_completa(data):
+    with open(DB_PATH, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
 # --- NÚCLEO DE ACCIÓN FÍSICA (CREAR Y BORRAR ARCHIVOS) ---
 def crear_archivo_local(nombre_archivo, contenido):
@@ -55,16 +65,37 @@ def eliminar_archivo_local(nombre_archivo):
     except Exception as e:
         return f"Error al eliminar el archivo: {str(e)}"
 
-# --- NÚCLEO DE AUTO-MODIFICACIÓN Y PERMISOS DE CÓDIGO ---
-def modificar_archivo_proyecto(nombre_archivo, nuevo_contenido):
+# --- SISTEMA DE GESTIÓN DE PARCHES (CANVAS 8) ---
+def registrar_parche_pendiente(nombre_archivo, contenido_nuevo, motivo):
+    """Registra una propuesta de modificación para que el Canvas 8 la apruebe."""
+    db = read_db()
+    if "parches_pendientes" not in db:
+        db["parches_pendientes"] = []
+    
+    parche_id = len(db["parches_pendientes"]) + 1
+    nuevo_parche = {
+        "id": parche_id,
+        "filename": nombre_archivo,
+        "content": contenido_nuevo,
+        "motivo": motivo,
+        "estado": "pendiente"
+    }
+    db["parches_pendientes"].append(nuevo_parche)
+    actualizar_db_completa(db)
+    
+    # Registrar también en el historial
+    save_to_db("historial", {"evento": "Propuesta de parche generada para Canvas 8", "archivo": nombre_archivo, "id": parche_id})
+    return parche_id
+
+def aplicar_parche_directo(nombre_archivo, contenido):
     archivos_permitidos = ["index.html", "styles.css", "chat.js", "canvas3d.js", "app.py"]
     if nombre_archivo not in archivos_permitidos:
         return {"status": "error", "mensaje": "Acceso denegado: Archivo protegido o no autorizado."}
     
     try:
         with open(nombre_archivo, 'w', encoding='utf-8') as f:
-            f.write(nuevo_contenido)
-        save_to_db("historial", {"evento": "Auto-modificación de código", "archivo": nombre_archivo, "estado": "Éxito"})
+            f.write(contenido)
+        save_to_db("historial", {"evento": "Auto-modificación aprobada y aplicada", "archivo": nombre_archivo, "estado": "Éxito"})
         return {"status": "success", "mensaje": f"Archivo '{nombre_archivo}' modificado y actualizado exitosamente por S.I.N.D.D.I."}
     except Exception as e:
         return {"status": "error", "mensaje": f"Fallo al modificar el archivo: {str(e)}"}
@@ -142,7 +173,6 @@ def procesar_respuesta_autonoma(query, memoria):
 
         codigo_3d = f"const geometry = new THREE.{forma};\nconst material = new THREE.MeshBasicMaterial({{color: {color_hex}}});\nconst mesh = new THREE.Mesh(geometry, material);\nscene.add(mesh);"
         
-        # Registrar instrucción 3D en Canvas 3
         save_to_db("documentos", {
             "file_name": f"Modelo3D_{tipo_figura}_{color_nombre}.txt",
             "content": f"Comando geométrico: {query}\nCódigo Three.js generado:\n{codigo_3d}"
@@ -155,9 +185,13 @@ def procesar_respuesta_autonoma(query, memoria):
         )
         return respuesta_texto, codigo_3d
 
-    # 4. Orden de auto-modificación de código
+    # 4. Orden de auto-modificación de código (Deriva al Canvas 8 para aprobación)
     if "modifica el archivo" in query_lower or "actualiza el codigo" in query_lower or "reescribe" in query_lower:
-        return "🛠️ [Permiso de Modificación Activo]\nIndícame el nombre exacto del archivo y el código completo.", ""
+        return (
+            "🛠️ [Propuesta de Modificación Registrada]\n"
+            "He generado el parche de código solicitado. El cambio ha sido enviado al **Canvas 8 (Depurador)** "
+            "para que puedas revisarlo y presionar 'Sí (Ejecutar)' o 'No (Denegar)'."
+        ), ""
 
     # 5. Orden de búsqueda en internet
     if query_lower.startswith("busca en internet") or query_lower.startswith("investiga sobre"):
@@ -185,9 +219,8 @@ def procesar_respuesta_autonoma(query, memoria):
         return f"🧠 [Motor de Razonamiento - S.I.N.D.D.I.]\nRegistros asimilados:\n\n{contexto}", ""
     
     if "hola" in query_lower:
-        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo local. Todo aprendizaje del chat, búsqueda o comando se registra automáticamente en el Canvas 3.", ""
+        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo local. Cualquier cambio de código pasa por el filtro de aprobación del Canvas 8.", ""
     else:
-        # Registrar interacción general en Canvas 3 como aprendizaje continuo
         save_to_db("documentos", {
             "file_name": f"Chat_{re.sub(r'[^a-zA-Z0-9]', '_', query[:15])}.txt",
             "content": f"Interacción y aprendizaje de usuario: {query}"
@@ -211,17 +244,59 @@ def handle_chat():
         "target_canvas": "canvas-2" if codigo_3d else ""
     }), 200
 
+# --- ENDPOINTS DE GESTIÓN DE PARCHES (CANVAS 8) ---
+@app.route('/api/parches/pendientes', methods=['GET'])
+def get_parches_pendientes():
+    """Endpoint para que el Canvas 8 consulte las modificaciones pendientes de SINDDI."""
+    memoria = read_db()
+    pendientes = [p for p in memoria.get("parches_pendientes", []) if p["estado"] == "pendiente"]
+    return jsonify(pendientes), 200
+
+@app.route('/api/parches/resolver', methods=['POST'])
+def resolver_parche():
+    """Endpoint vinculado a los botones 'Sí (Ejecutar)' y 'No (Denegar)' del Canvas 8."""
+    data = request.get_json(silent=True) or {}
+    parche_id = data.get('id')
+    accion = data.get('accion') # "aprobar" o "denegar"
+
+    db = read_db()
+    parche_encontrado = None
+    for p in db.get("parches_pendientes", []):
+        if p["id"] == parche_id:
+            parche_encontrado = p
+            break
+
+    if not parche_encontrado:
+        return jsonify({"error": "Parche no encontrado"}), 404
+
+    if accion == "aprobar":
+        resultado = aplicar_parche_directo(parche_encontrado["filename"], parche_encontrado["content"])
+        parche_encontrado["estado"] = "aprobado"
+        actualizar_db_completa(db)
+        return jsonify({"status": "success", "mensaje": f"Parche #{parche_id} aprobado y aplicado con éxito.", "resultado": resultado}), 200
+    else:
+        parche_encontrado["estado"] = "denegado"
+        actualizar_db_completa(db)
+        save_to_db("historial", {"evento": "Auto-modificación denegada", "archivo": parche_encontrado["filename"]})
+        return jsonify({"status": "success", "mensaje": f"Parche #{parche_id} denegado por el operador."}), 200
+
 @app.route('/api/code-patch', methods=['POST'])
 def handle_code_patch():
+    """Intercepta cualquier intento de parche de código y lo encola obligatoriamente para revisión en el Canvas 8."""
     data = request.get_json(silent=True) or {}
     filename = data.get('filename')
     content = data.get('content')
+    motivo = data.get('motivo', 'Optimización o parche autónomo propuesto por SINDDI')
     
     if not filename or not content:
         return jsonify({"error": "Faltan parámetros (filename o content)"}), 400
         
-    resultado = modificar_archivo_proyecto(filename, content)
-    return jsonify(resultado), (200 if resultado["status"] == "success" else 400)
+    parche_id = registrar_parche_pendiente(filename, content, motivo)
+    return jsonify({
+        "status": "pending_approval",
+        "parche_id": parche_id,
+        "mensaje": f"Modificación para '{filename}' retenida. Requiere aprobación en el Canvas 8."
+    }), 200
 
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
