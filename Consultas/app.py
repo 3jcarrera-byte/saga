@@ -95,12 +95,20 @@ TOOLS = [
 
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
-    user_message = request.json.get('message', '').strip()
+    req_data = request.get_json(silent=True) or {}
+    # Soporta tanto 'query' (enviado por chat.js) como 'message'
+    user_message = (req_data.get('query') or req_data.get('message') or '').strip()
     if not user_message:
         return jsonify({"error": "Mensaje vacío"}), 400
 
     memoria = read_db()
-    documentos_aprendidos = str(memoria.get("documentos", []))[-3000:] 
+    
+    # Adaptado para soportar estructura de memorias de objetos (Canvas 3) o textos planos
+    docs_raw = memoria.get("documentos", [])
+    if docs_raw and isinstance(docs_raw[0], dict):
+        documentos_aprendidos = str([d.get('content', '') for d in docs_raw])[-3000:]
+    else:
+        documentos_aprendidos = str(docs_raw)[-3000:] 
     
     system_instruction = (
         "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), una IA autónoma de identidad femenina, "
@@ -159,11 +167,36 @@ def handle_chat():
             bot_response = "Procesamiento completado correctamente."
 
         save_to_db("historial", {"user": user_message, "bot": bot_response})
-        return jsonify({"response": bot_response, "code_3d": code_3d_to_send})
+        
+        # chat.js espera una respuesta de texto plano o JSON con el mensaje. 
+        # Devolvemos texto plano directamente o ajustado si prefieres, pero aquí devolvemos `response` en texto o JSON plano compatible con `response.text()` en frontend.
+        return bot_response, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
     except Exception as e:
         print(f"Fallo en el núcleo de S.I.N.D.D.I.: {e}")
-        return jsonify({"response": "Error interno al consultar mis circuitos locales.", "code_3d": ""}), 500
+        return "Error interno al consultar mis circuitos locales.", 500, {'Content-Type': 'text/plain; charset=utf-8'}
+
+@app.route('/api/memories', methods=['GET'])
+def get_memories():
+    """Devuelve los conceptos/documentos estructurados para alimentar la Biblioteca (Canvas 3)."""
+    memoria = read_db()
+    docs = memoria.get("documentos", [])
+    
+    # Formatear al esquema que espera chat.js (array de objetos con 'concept' y 'details')
+    formatted_memories = []
+    for d in docs:
+        if isinstance(d, dict):
+            formatted_memories.append({
+                "concept": d.get("file_name", "Documento Asimilado"),
+                "details": d.get("content", "")[:150] + "..."
+            })
+        else:
+            formatted_memories.append({
+                "concept": "Registro de Memoria",
+                "details": str(d)[:150]
+            })
+            
+    return jsonify(formatted_memories), 200
 
 @app.route('/api/upload', methods=['POST'])
 def handle_pdf():
@@ -176,7 +209,13 @@ def handle_pdf():
         extracted_text = "".join([page.extract_text() for page in reader.pages])
         
         save_to_db("documentos", {"file_name": file.filename, "content": extracted_text})
-        return jsonify({"response": f"El documento '{file.filename}' ha sido leído y guardado con éxito en mi memoria persistente para alimentar la biblioteca del Canvas 3."})
+        
+        # chat.js espera JSON con 'message' y 'chunks'
+        chunks_estimated = max(1, len(extracted_text) // 500)
+        return jsonify({
+            "message": f"El documento '{file.filename}' ha sido indexado correctamente.",
+            "chunks": chunks_estimated
+        }), 200
     except Exception as e:
         print(f"Error procesando PDF: {e}")
         return jsonify({"error": "No se pudo extraer el texto del PDF correctamente."}), 500
