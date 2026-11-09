@@ -51,24 +51,24 @@ def buscar_en_internet(query):
         print(f"Error en buscador web: {e}")
         return {"status": "error", "data": "No se pudo conectar a los servidores de búsqueda web."}
 
-# Esquema de funciones expuestas al cerebro analítico
+# Esquema de funciones expuestas al cerebro analítico con soporte multi-estación
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "inyectar_codigo_3d",
-            "description": "Dibuja figuras, luces o animaciones 3D usando Three.js en el Canvas 4 (entorno 3D principal y avatar de S.I.N.D.D.I.).",
+            "description": "Controla los visores gráficos de S.I.N.D.D.I. Usa 'canvas-4' para el avatar y conceptos generales, 'canvas-2' para modelado tridimensional y materiales PBR, y 'canvas-7' para esqueletos, rigging y animaciones.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "canvas_id": {
                         "type": "string",
-                        "enum": ["canvas-4"],
-                        "description": "El ID exacto del canvas donde se añadirá el objeto (Canvas 4 para 3D)."
+                        "enum": ["canvas-2", "canvas-4", "canvas-7"],
+                        "description": "El ID exacto de la estación de trabajo 3D donde se inyectará el código."
                     },
                     "codigo_js": {
                         "type": "string",
-                        "description": "Código JavaScript para Three.js."
+                        "description": "Código JavaScript de Three.js adaptado para la estación seleccionada."
                     }
                 },
                 "required": ["canvas_id", "codigo_js"]
@@ -79,7 +79,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "buscar_en_internet",
-            "description": "Busca información en la red cuando la usuaria pregunte por eventos recientes o datos externos.",
+            "description": "Busca información en la red cuando la usuaria requiera referencias técnicas, fórmulas o datos externos.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -104,10 +104,11 @@ def handle_chat():
     
     system_instruction = (
         "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), una IA autónoma de identidad femenina, "
-        "altamente técnica, analítica y servicial. Eres la asistente central del entorno modular de desarrollo. "
-        "Cuentas con acceso directo a tu memoria persistente local en formato JSON y a los documentos asimilados en la biblioteca. "
+        "altamente técnica, analítica y servicial. Eres la asistente central del entorno modular de desarrollo 3D. "
+        "Cuentas con acceso directo a tu memoria persistente local en formato JSON y a los documentos de la biblioteca. "
         f"Conocimientos asimilados de tus documentos: {documentos_aprendidos}. "
-        "Si la usuaria pide crear elementos visuales o renderizar maquetas, invoca 'inyectar_codigo_3d' en el Canvas 4. "
+        "Si la usuaria pide diseñar assets o texturas, usa 'inyectar_codigo_3d' en el Canvas 2. "
+        "Si pide animaciones o esqueletos, usa el Canvas 7. Para tu avatar o maquetas generales, usa el Canvas 4. "
         "Si te pide datos externos que desconozcas, invoca 'buscar_en_internet'."
     )
 
@@ -138,7 +139,8 @@ def handle_chat():
                 if function_name == "inyectar_codigo_3d":
                     res_tool = inyectar_codigo_3d(arguments['canvas_id'], arguments['codigo_js'])
                     code_3d_to_send = res_tool["code_3d"]
-                    bot_response = f"Ejecutando script de renderizado 3D en el Canvas 4."
+                    target_canvas = arguments['canvas_id']
+                    bot_response = f"Ejecutando script de renderizado 3D en el `{target_canvas}`."
                     tool_content = json.dumps(res_tool)
                     
                 elif function_name == "buscar_en_internet":
