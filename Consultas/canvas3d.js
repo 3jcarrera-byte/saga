@@ -1,78 +1,46 @@
-const scenes = {};
-const cameras = {};
-const renderers = {};
-const updateRegistries = {};
-
-// CORRECCIÓN: Lista numérica explícita para activar tus 7 pantallas 3D independientes
-const active3DCanvasNumbers =;
-
-// SEGURO ANTI-ERRORES: Espera a que el HTML esté completamente listo en memoria
-document.addEventListener("DOMContentLoaded", () => {
+// Inicialización del entorno 3D en Canvas 4
+const container = document.getElementById('viewport-3d');
+if (container) {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     
-    active3DCanvasNumbers.forEach(num => {
-        const id = `canvas-${num}`;
-        const container = document.getElementById(id);
-        
-        // Si por alguna razón el HTML cambia y no encuentra el contenedor, se lo salta en vez de romper todo
-        if (!container) return; 
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    container.appendChild(renderer.domElement);
 
-        const scene = new THREE.Scene();
-        scenes[id] = scene;
-
-        // Proporción matemática inicial
-        const camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 100);
-        camera.position.z = 4;
-        cameras[id] = camera;
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(container.clientWidth, container.clientHeight);
-        renderer.setPixelRatio(window.devicePixelRatio); // Añadido para mejor nitidez en pantallas de alta resolución
-        container.appendChild(renderer.domElement);
-        renderers[id] = renderer;
-
-        // Iluminación integrada para cada cuadrante
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-        dirLight.position.set(2, 4, 2);
-        scene.add(dirLight);
-
-        updateRegistries[id] = [];
+    // Geometría central (núcleo flotante de S.I.N.D.D.I.)
+    const geometry = new THREE.IcosahedronGeometry(1.2, 0);
+    const material = new THREE.MeshStandardMaterial({ 
+        color: 0xec4899, 
+        wireframe: true,
+        roughness: 0.3 
     });
+    const coreMesh = new THREE.Mesh(geometry, material);
+    scene.add(coreMesh);
 
-    // Encendemos el bucle maestro una vez creados los entornos
-    masterRenderLoop();
-});
+    // Iluminación
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+    
+    const pointLight = new THREE.PointLight(0x38bdf8, 2, 50);
+    pointLight.position.set(5, 5, 5);
+    scene.add(pointLight);
 
-// El bucle de renderizado se ejecuta de forma externa y continua
-function masterRenderLoop() {
-    requestAnimationFrame(masterRenderLoop);
+    camera.position.z = 4;
 
-    active3DCanvasNumbers.forEach(num => {
-        const id = `canvas-${num}`;
-        if (!scenes[id]) return;
+    // Bucle de animación dinámico
+    function animate() {
+        requestAnimationFrame(animate);
+        coreMesh.rotation.x += 0.005;
+        coreMesh.rotation.y += 0.01;
+        renderer.render(scene, camera);
+    }
+    animate();
 
-        // Ejecutar las funciones de movimiento inyectadas por la IA
-        updateRegistries[id].forEach(animationFn => {
-            try { animationFn(); } catch (e) { console.error(`Error en animación de ${id}:`, e); }
-        });
-
-        renderers[id].render(scenes[id], cameras[id]);
+    // Ajuste de ventana
+    window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
     });
 }
-
-// Auto-ajuste de tamaño adaptativo optimizado para el CSS Grid
-window.addEventListener('resize', () => {
-    active3DCanvasNumbers.forEach(num => {
-        const id = `canvas-${num}`;
-        const container = document.getElementById(id);
-        if (!container || !renderers[id]) return;
-
-        // Restablecemos las dimensiones basándonos en el redimensionamiento del contenedor Grid
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-
-        cameras[id].aspect = width / height;
-        cameras[id].updateProjectionMatrix();
-        renderers[id].setSize(width, height);
-    });
-});
