@@ -1,102 +1,184 @@
-// --- CONFIGURACIÓN DE ESCUCHAS DE EVENTOS ---
-document.addEventListener("DOMContentLoaded", () => {
-    // Vinculamos funciones a los clics de los botones
-    document.getElementById('btn-send').addEventListener('click', sendMessage);
-    document.getElementById('btn-upload').addEventListener('click', uploadPDF);
+import os
+import json
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pypdf
+from openai import OpenAI
+from duckduckgo_search import DDGS
 
-    // Permitir enviar el mensaje presionando la tecla "Enter"
-    document.getElementById('user-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-    });
-});
+app = Flask(__name__)
+CORS(app)
 
-/**
- * Imprime los mensajes en la caja de texto central con formato limpio.
- */
-function printMessage(sender, text, type) {
-    const box = document.getElementById('chat-messages');
-    if (!box) return;
+# Configura tu API Key aquí o mediante tu variable de entorno del sistema
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "TU_OPENAI_API_KEY_AQUI"))
 
-    box.innerHTML += `<div class="message ${type}"><strong>${sender}:</strong> ${text}</div>`;
-    // Auto-scroll hacia abajo para ver siempre el último mensaje
-    box.scrollTop = box.scrollHeight;
-}
+DB_PATH = "memorie.json"
 
-/**
- * Envía el mensaje del usuario al backend de Python y procesa la respuesta e inyección 3D.
- */
-async function sendMessage() {
-    const input = document.getElementById('user-input');
-    const msg = input.value.trim();
-    if (!msg) return; // No hacer nada si el campo está vacío
+def init_db():
+    if not os.path.exists(DB_PATH):
+        with open(DB_PATH, 'w', encoding='utf-8') as f:
+            json.dump({"documentos": [], "internet": [], "historial": []}, f, indent=4)
 
-    // 1. Mostrar el mensaje del usuario en pantalla
-    printMessage('Tú', msg, 'user');
-    input.value = ''; // Limpiar barra de escritura
+def save_to_db(key, entry):
+    with open(DB_PATH, 'r+', encoding='utf-8') as f:
+        data = json.load(f)
+        data[key].append(entry)
+        f.seek(0)
+        json.dump(data, f, indent=4, ensure_ascii=False)
+        f.truncate()
 
-    try {
-        // 2. Conectar con el backend de Flask
-        const response = await fetch('http://localhost:5000/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: msg })
-        });
+def read_db():
+    with open(DB_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-        if (!response.ok) throw new Error("Error en la respuesta del servidor");
-        
-        const data = await response.json();
-        
-        // 3. Mostrar la respuesta analítica de la IA
-        printMessage('Asistente', data.response, 'bot');
+# --- HERRAMIENTAS QUE LA IA EJECUTA EN TIEMPO REAL ---
 
-        // 4. OTORGAMIENTO DE PERMISOS: Si la IA generó código 3D dinámico, lo ejecutamos
-        if (data.code_3d) {
-            try {
-                // Encapsulamos el script en una función dándole acceso controlado a las escenas de canvas3d.js
-                const executeCode = new Function('scenes', 'updateRegistries', data.code_3d);
-                executeCode(scenes, updateRegistries);
-            } catch (threeError) {
-                console.error("Fallo al renderizar la inyección 3D de la IA:", threeError);
-                printMessage('Sistema', 'El código 3D de la IA tiene un error de sintaxis gráfica.', 'system');
+def inyectar_codigo_3d(canvas_id, codigo_js):
+    """Guarda las instrucciones que se ejecutarán en el frontend."""
+    return {"status": "success", "code_3d": codigo_js, "target": canvas_id}
+
+def buscar_en_internet(query):
+    """Busca información verídica en la web usando DuckDuckGo de forma gratuita."""
+    try:
+        with DDGS() as ddgs:
+            results = [r for r in ddgs.text(query, max_results=3)]
+            if results:
+                textos_web = "\n".join([f"Fuente: {r['href']} | Datos: {r['body']}" for r in results])
+                save_to_db("internet", {"query": query, "resultado": textos_web})
+                return {"status": "success", "data": textos_web}
+            return {"status": "success", "data": "No se encontraron resultados web recientes."}
+    except Exception as e:
+        print(f"Error en buscador web: {e}")
+        return {"status": "error", "data": "No se pudo conectar a los servidores de búsqueda web."}
+
+# Esquema de funciones expuestas al cerebro analítico
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "inyectar_codigo_3d",
+            "description": "Dibuja figuras, luces o animaciones 3D usando Three.js en el Canvas 4 (entorno 3D principal y avatar de S.I.N.D.D.I.).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_id": {
+                        "type": "string",
+                        "enum": ["canvas-4"],
+                        "description": "El ID exacto del canvas donde se añadirá el objeto (Canvas 4 para 3D)."
+                    },
+                    "codigo_js": {
+                        "type": "string",
+                        "description": "Código JavaScript para Three.js."
+                    }
+                },
+                "required": ["canvas_id", "codigo_js"]
             }
         }
-    } catch (error) {
-        console.error("Error de comunicación:", error);
-        printMessage('Sistema', 'Imposible conectar con el cerebro de Python. ¿Encendiste app.py?', 'system');
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_en_internet",
+            "description": "Busca información en la red cuando la usuaria pregunte por eventos recientes o datos externos.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Término de búsqueda preciso en lenguaje natural."}
+                },
+                "required": ["query"]
+            }
+        }
     }
-}
+]
 
-/**
- * Toma el archivo PDF seleccionado, extrae su texto en el servidor y lo almacena en memorie.json
- */
-async function uploadPDF() {
-    const fileInput = document.getElementById('pdf-file');
-    if (!fileInput || fileInput.files.length === 0) {
-        alert("Por favor, selecciona un archivo PDF primero usando el botón 📂.");
-        return;
-    }
+# --- LÓGICA DE GESTIÓN DEL CHAT CON S.I.N.D.D.I. ---
 
-    const file = fileInput.files[0];
-    const formData = new FormData();
-    formData.append('file', file);
+@app.route('/chat', methods=['POST'])
+def handle_chat():
+    user_message = request.json.get('message', '').strip()
+    if not user_message:
+        return jsonify({"error": "Mensaje vacío"}), 400
 
-    printMessage('Sistema', `Analizando y asimilando '${file.name}' en la memoria JSON...`, 'system');
+    memoria = read_db()
+    documentos_aprendidos = str(memoria.get("documentos", []))[-3000:] 
+    
+    system_instruction = (
+        "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), una IA autónoma de identidad femenina, "
+        "altamente técnica, analítica y servicial. Eres la asistente central del entorno modular de desarrollo. "
+        "Cuentas con acceso directo a tu memoria persistente local en formato JSON y a los documentos asimilados en la biblioteca. "
+        f"Conocimientos asimilados de tus documentos: {documentos_aprendidos}. "
+        "Si la usuaria pide crear elementos visuales o renderizar maquetas, invoca 'inyectar_codigo_3d' en el Canvas 4. "
+        "Si te pide datos externos que desconozcas, invoca 'buscar_en_internet'."
+    )
 
-    try {
-        const response = await fetch('http://localhost:5000/upload-pdf', {
-            method: 'POST',
-            body: formData
-        });
+    messages = [
+        {"role": "system", "content": system_instruction},
+        {"role": "user", "content": user_message}
+    ]
 
-        if (!response.ok) throw new Error("Error al subir archivo");
-
-        const data = await response.json();
-        printMessage('Asistente', data.response, 'bot');
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=TOOLS,
+            tool_choice="auto"
+        )
         
-        // Limpiar el selector de archivos una vez completado
-        fileInput.value = '';
-    } catch (error) {
-        console.error("Error al procesar PDF:", error);
-        printMessage('Sistema', 'Fallo al intentar cargar e indexar el documento PDF.', 'system');
-    }
-}
+        response_message = response.choices[0].message
+        bot_response = response_message.content or ""
+        code_3d_to_send = ""
+
+        if response_message.tool_calls:
+            messages.append(response_message)
+            
+            for tool_call in response_message.tool_calls:
+                function_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+                
+                if function_name == "inyectar_codigo_3d":
+                    res_tool = inyectar_codigo_3d(arguments['canvas_id'], arguments['codigo_js'])
+                    code_3d_to_send = res_tool["code_3d"]
+                    bot_response = f"Ejecutando script de renderizado 3D en el Canvas 4."
+                    tool_content = json.dumps(res_tool)
+                    
+                elif function_name == "buscar_en_internet":
+                    res_tool = buscar_en_internet(arguments['query'])
+                    bot_response = f"He consultado la red sobre '{arguments['query']}'. Aquí tienes los datos:\n{res_tool['data']}"
+                    tool_content = json.dumps(res_tool)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": function_name,
+                    "content": tool_content
+                })
+
+        if not bot_response:
+            bot_response = "Procesamiento completado correctamente."
+
+        save_to_db("historial", {"user": user_message, "bot": bot_response})
+        return jsonify({"response": bot_response, "code_3d": code_3d_to_send})
+
+    except Exception as e:
+        print(f"Fallo en el núcleo de S.I.N.D.D.I.: {e}")
+        return jsonify({"response": "Error interno al consultar mis circuitos locales.", "code_3d": ""}), 500
+
+@app.route('/upload-pdf', methods=['POST'])
+def handle_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se detectó ningún archivo"}), 400
+    file = request.files['file']
+    
+    try:
+        reader = pypdf.PdfReader(file)
+        extracted_text = "".join([page.extract_text() for page in reader.pages])
+        
+        save_to_db("documentos", {"file_name": file.filename, "content": extracted_text})
+        return jsonify({"response": f"El documento '{file.filename}' ha sido leído y guardado con éxito en mi memoria persistente para alimentar la biblioteca del Canvas 3."})
+    except Exception as e:
+        print(f"Error procesando PDF: {e}")
+        return jsonify({"error": "No se pudo extraer el texto del PDF correctamente."}), 500
+
+if __name__ == '__main__':
+    init_db()
+    app.run(port=5000, debug=True)
