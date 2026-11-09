@@ -34,7 +34,7 @@ def read_db():
 def modificar_archivo_proyecto(nombre_archivo, nuevo_contenido):
     """
     Permite a S.I.N.D.D.I. modificar, actualizar o corregir sus propios archivos de código 
-    (index.html, styles.css, chat.js, canvas3d.js) para evolucionar su interfaz o corregir errores.
+    (index.html, styles.css, chat.js, canvas3d.js, app.py) para evolucionar su interfaz o corregir errores.
     """
     archivos_permitidos = ["index.html", "styles.css", "chat.js", "canvas3d.js", "app.py"]
     if nombre_archivo not in archivos_permitidos:
@@ -132,7 +132,8 @@ def handle_chat():
         return jsonify({"error": "Mensaje vacío"}), 400
 
     memoria = read_db()
-    bot_response = procesar_respuesta_inteligente(user_message, memoria)
+    # Llamada corregida y unificada con el nombre exacto de la función
+    bot_response = procesar_respuesta_autonoma(user_message, memoria)
 
     save_to_db("historial", {"user": user_message, "bot": bot_response})
     return jsonify({"response": bot_response, "code_3d": "", "target_canvas": ""}), 200
