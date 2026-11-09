@@ -1,184 +1,185 @@
-import os
-import json
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import pypdf
-from openai import OpenAI
-from duckduckgo_search import DDGS
+// --- CONFIGURACIÓN DE ESCUCHAS DE EVENTOS PARA S.I.N.D.D.I. ---
+document.addEventListener("DOMContentLoaded", () => {
+    const btnSend = document.getElementById('btn-send');
+    const btnUpload = document.getElementById('btn-upload');
+    const userInput = document.getElementById('user-input');
 
-app = Flask(__name__)
-CORS(app)
+    if (btnSend) btnSend.addEventListener('click', sendMessage);
+    if (btnUpload) btnUpload.addEventListener('click', uploadPDF);
 
-# Configura tu API Key aquí o mediante tu variable de entorno del sistema
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "TU_OPENAI_API_KEY_AQUI"))
-
-DB_PATH = "memorie.json"
-
-def init_db():
-    if not os.path.exists(DB_PATH):
-        with open(DB_PATH, 'w', encoding='utf-8') as f:
-            json.dump({"documentos": [], "internet": [], "historial": []}, f, indent=4)
-
-def save_to_db(key, entry):
-    with open(DB_PATH, 'r+', encoding='utf-8') as f:
-        data = json.load(f)
-        data[key].append(entry)
-        f.seek(0)
-        json.dump(data, f, indent=4, ensure_ascii=False)
-        f.truncate()
-
-def read_db():
-    with open(DB_PATH, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-# --- HERRAMIENTAS QUE LA IA EJECUTA EN TIEMPO REAL ---
-
-def inyectar_codigo_3d(canvas_id, codigo_js):
-    """Guarda las instrucciones que se ejecutarán en el frontend."""
-    return {"status": "success", "code_3d": codigo_js, "target": canvas_id}
-
-def buscar_en_internet(query):
-    """Busca información verídica en la web usando DuckDuckGo de forma gratuita."""
-    try:
-        with DDGS() as ddgs:
-            results = [r for r in ddgs.text(query, max_results=3)]
-            if results:
-                textos_web = "\n".join([f"Fuente: {r['href']} | Datos: {r['body']}" for r in results])
-                save_to_db("internet", {"query": query, "resultado": textos_web})
-                return {"status": "success", "data": textos_web}
-            return {"status": "success", "data": "No se encontraron resultados web recientes."}
-    except Exception as e:
-        print(f"Error en buscador web: {e}")
-        return {"status": "error", "data": "No se pudo conectar a los servidores de búsqueda web."}
-
-# Esquema de funciones expuestas al cerebro analítico
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "inyectar_codigo_3d",
-            "description": "Dibuja figuras, luces o animaciones 3D usando Three.js en el Canvas 4 (entorno 3D principal y avatar de S.I.N.D.D.I.).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "canvas_id": {
-                        "type": "string",
-                        "enum": ["canvas-4"],
-                        "description": "El ID exacto del canvas donde se añadirá el objeto (Canvas 4 para 3D)."
-                    },
-                    "codigo_js": {
-                        "type": "string",
-                        "description": "Código JavaScript para Three.js."
-                    }
-                },
-                "required": ["canvas_id", "codigo_js"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "buscar_en_internet",
-            "description": "Busca información en la red cuando la usuaria pregunte por eventos recientes o datos externos.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Término de búsqueda preciso en lenguaje natural."}
-                },
-                "required": ["query"]
-            }
-        }
+    if (userInput) {
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
     }
-]
 
-# --- LÓGICA DE GESTIÓN DEL CHAT CON S.I.N.D.D.I. ---
+    // Inicializar componentes visuales de S.I.N.D.D.I. al arrancar
+    loadKnowledgeLibrary(); // Canvas 3
+    initFileTreeWorkspace(); // Canvas 1 y Canvas 6
+});
 
-@app.route('/chat', methods=['POST'])
-def handle_chat():
-    user_message = request.json.get('message', '').strip()
-    if not user_message:
-        return jsonify({"error": "Mensaje vacío"}), 400
+/**
+ * Imprime los mensajes en la caja de texto central con formato limpio y personalidad de S.I.N.D.D.I.
+ */
+function printMessage(sender, text, type) {
+    const box = document.getElementById('chat-messages');
+    if (!box) return;
 
-    memoria = read_db()
-    documentos_aprendidos = str(memoria.get("documentos", []))[-3000:] 
-    
-    system_instruction = (
-        "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), una IA autónoma de identidad femenina, "
-        "altamente técnica, analítica y servicial. Eres la asistente central del entorno modular de desarrollo. "
-        "Cuentas con acceso directo a tu memoria persistente local en formato JSON y a los documentos asimilados en la biblioteca. "
-        f"Conocimientos asimilados de tus documentos: {documentos_aprendidos}. "
-        "Si la usuaria pide crear elementos visuales o renderizar maquetas, invoca 'inyectar_codigo_3d' en el Canvas 4. "
-        "Si te pide datos externos que desconozcas, invoca 'buscar_en_internet'."
-    )
+    box.innerHTML += `<div class="message ${type}"><strong>${sender}:</strong> ${text}</div>`;
+    box.scrollTop = box.scrollHeight;
+}
 
-    messages = [
-        {"role": "system", "content": system_instruction},
-        {"role": "user", "content": user_message}
-    ]
+/**
+ * Envía la consulta de la usuaria al núcleo local en Node.js y procesa la respuesta por ensamble semántico.
+ */
+async function sendMessage() {
+    const input = document.getElementById('user-input');
+    if (!input) return;
+    const msg = input.value.trim();
+    if (!msg) return;
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto"
-        )
+    printMessage('Tú', msg, 'user');
+    input.value = '';
+
+    // Indicador visual de procesamiento de S.I.N.D.D.I.
+    const box = document.getElementById('chat-messages');
+    const loadingId = 'sinddi-thinking-' + Date.now();
+    if (box) {
+        box.innerHTML += `<div class="message bot" id="${loadingId}"><strong>S.I.N.D.D.I.:</strong> <em>Consultando mi memoria evolutiva local...</em></div>`;
+        box.scrollTop = box.scrollHeight;
+    }
+
+    try {
+        const response = await fetch('http://localhost:3000/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: msg })
+        });
+
+        if (!response.ok) throw new Error("Error en la respuesta del servidor local");
         
-        response_message = response.choices[0].message
-        bot_response = response_message.content or ""
-        code_3d_to_send = ""
-
-        if response_message.tool_calls:
-            messages.append(response_message)
-            
-            for tool_call in response_message.tool_calls:
-                function_name = tool_call.function.name
-                arguments = json.loads(tool_call.function.arguments)
-                
-                if function_name == "inyectar_codigo_3d":
-                    res_tool = inyectar_codigo_3d(arguments['canvas_id'], arguments['codigo_js'])
-                    code_3d_to_send = res_tool["code_3d"]
-                    bot_response = f"Ejecutando script de renderizado 3D en el Canvas 4."
-                    tool_content = json.dumps(res_tool)
-                    
-                elif function_name == "buscar_en_internet":
-                    res_tool = buscar_en_internet(arguments['query'])
-                    bot_response = f"He consultado la red sobre '{arguments['query']}'. Aquí tienes los datos:\n{res_tool['data']}"
-                    tool_content = json.dumps(res_tool)
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": function_name,
-                    "content": tool_content
-                })
-
-        if not bot_response:
-            bot_response = "Procesamiento completado correctamente."
-
-        save_to_db("historial", {"user": user_message, "bot": bot_response})
-        return jsonify({"response": bot_response, "code_3d": code_3d_to_send})
-
-    except Exception as e:
-        print(f"Fallo en el núcleo de S.I.N.D.D.I.: {e}")
-        return jsonify({"response": "Error interno al consultar mis circuitos locales.", "code_3d": ""}), 500
-
-@app.route('/upload-pdf', methods=['POST'])
-def handle_pdf():
-    if 'file' not in request.files:
-        return jsonify({"error": "No se detectó ningún archivo"}), 400
-    file = request.files['file']
-    
-    try:
-        reader = pypdf.PdfReader(file)
-        extracted_text = "".join([page.extract_text() for page in reader.pages])
+        const responseText = await response.text();
         
-        save_to_db("documentos", {"file_name": file.filename, "content": extracted_text})
-        return jsonify({"response": f"El documento '{file.filename}' ha sido leído y guardado con éxito en mi memoria persistente para alimentar la biblioteca del Canvas 3."})
-    except Exception as e:
-        print(f"Error procesando PDF: {e}")
-        return jsonify({"error": "No se pudo extraer el texto del PDF correctamente."}), 500
+        // Remover indicador de carga
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
 
-if __name__ == '__main__':
-    init_db()
-    app.run(port=5000, debug=True)
+        printMessage('S.I.N.D.D.I.', responseText, 'bot');
+
+        // Refrescar Canvas 3 por si se asimiló nuevo conocimiento
+        loadKnowledgeLibrary();
+
+    } catch (error) {
+        console.error("Error de comunicación:", error);
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+        printMessage('Sistema', 'No pude conectar con mi núcleo local en Node.js. ¿Verificaste que server.js esté activo?', 'system');
+    }
+}
+
+/**
+ * Toma el archivo PDF seleccionado, lo envía a S.I.N.D.D.I. para indexación sin internet y actualización de memorias.
+ */
+async function uploadPDF() {
+    const fileInput = document.getElementById('pdf-file') || document.getElementById('pdf');
+    if (!fileInput || fileInput.files.length === 0) {
+        alert("Por favor, selecciona un archivo PDF primero usando el selector 📂.");
+        return;
+    }
+
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append('pdf', file); // Coincide con upload.single('pdf') en server.js
+
+    printMessage('S.I.N.D.D.I.', `Analizando y asimilando '${file.name}' directamente en mi base de vectores local...`, 'bot');
+
+    try {
+        const response = await fetch('http://localhost:3000/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) throw new Error("Error al indexar el documento");
+
+        const data = await response.json();
+        printMessage('S.I.N.D.D.I.', `✨ ¡Listo! ${data.message} (${data.chunks} fragmentos vectorizados).`, 'bot');
+        
+        // Actualizar la biblioteca de conocimiento (Canvas 3)
+        loadKnowledgeLibrary();
+        fileInput.value = '';
+    } catch (error) {
+        console.error("Error al procesar PDF:", error);
+        printMessage('Sistema', 'Fallo al intentar cargar e indexar el documento PDF.', 'system');
+    }
+}
+
+/**
+ * Carga y renderiza la Biblioteca de Conocimiento en el Canvas 3 a partir de memories.json
+ */
+async function loadKnowledgeLibrary() {
+    const libContainer = document.getElementById('knowledge-library');
+    if (!libContainer) return;
+
+    try {
+        const res = await fetch('http://localhost:3000/api/memories');
+        if (!res.ok) return;
+        const memories = await res.json();
+
+        if (memories.length === 0) {
+            libContainer.innerHTML = '<p class="muted">Aún no hay conceptos asimilados en la biblioteca.</p>';
+            return;
+        }
+
+        libContainer.innerHTML = memories.map(m => `
+            <div class="knowledge-card" style="background: #1e293b; border-left: 3px solid #38bdf8; padding: 8px; margin-bottom: 6px; border-radius: 4px; font-size: 12px;">
+                <strong>📌 ${m.concept}</strong>
+                <p style="margin: 4px 0 0 0; color: #cbd5e1;">${m.details}</p>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error("No se pudo cargar la biblioteca de conocimiento:", e);
+    }
+}
+
+/**
+ * Inicializa el ramal de archivos en el Canvas 1 y permite su ejecución en el Canvas 6
+ */
+function initFileTreeWorkspace() {
+    const treeContainer = document.getElementById('file-tree');
+    if (!treeContainer) return;
+
+    // Ramal de archivos simulado del programa activo
+    const projectFiles = [
+        { filename: 'index.html', content: '<html><body style="font-family:sans-serif; text-align:center; padding-top:20px;"><h2>⚡ S.I.N.D.D.I. Runtime Activo</h2><p>Ejecutando ramal del Canvas 1 correctamente.</p></body></html>' },
+        { filename: 'app.js', content: 'console.log("S.I.N.D.D.I. script cargado en el entorno de ejecución.");' }
+    ];
+
+    treeContainer.innerHTML = `
+        <div class="folder-view" style="font-size: 13px;">
+            <strong>📁 /Proyecto_SINDDI_Core</strong>
+            <ul style="list-style: none; padding-left: 15px; margin-top: 5px;">
+                ${projectFiles.map(f => `
+                    <li style="cursor: pointer; padding: 3px 0; color: #38bdf8;" onclick="executeFileInCanvas6('${f.filename}', \`${encodeURIComponent(f.content)}\`)">
+                        📄 ${f.filename}
+                    </li>
+                `).join('')}
+            </ul>
+        </div>
+    `;
+
+    // Cargar la vista previa por defecto en el Canvas 6
+    executeFileInCanvas6('index.html', encodeURIComponent(projectFiles[0].content));
+}
+
+/**
+ * Carga y ejecuta el ramal de archivos seleccionado en el Canvas 6 (Consola Ejecutora / Iframe)
+ */
+function executeFileInCanvas6(filename, encodedContent) {
+    const iframe = document.getElementById('runtime-iframe');
+    if (!iframe) return;
+
+    const content = decodeURIComponent(encodedContent);
+    iframe.srcdoc = content;
+    
+    printMessage('S.I.N.D.D.I.', `He desplegado el archivo '${filename}' en la consola ejecutora (Canvas 6).`, 'system');
+}
