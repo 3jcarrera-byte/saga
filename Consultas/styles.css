@@ -1,179 +1,184 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-}
+import os
+import json
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pypdf
+from openai import OpenAI
+from duckduckgo_search import DDGS
 
-body {
-    background-color: #09090b;
-    color: #ffffff;
-    height: 100vh;
-    overflow: hidden;
-}
+app = Flask(__name__)
+CORS(app)
 
-/* Cuadrícula Base de 9 Porciones Iguales */
-#grid-container {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(3, 1fr);
-    width: 100vw;
-    height: 100vh;
-    gap: 8px;
-    padding: 8px;
-}
+# Configura tu API Key aquí o mediante tu variable de entorno del sistema
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "TU_OPENAI_API_KEY_AQUI"))
 
-/* Los 7 entornos que sí son Canvas 3D */
-.canvas-3d {
-    background-color: #111115;
-    border: 1px solid #1f1f29;
-    border-radius: 6px;
-    position: relative;
-    overflow: hidden;
-}
+DB_PATH = "memorie.json"
 
-.canvas-3d canvas {
-    display: block;
-    width: 100% !important;
-    height: 100% !important;
-}
+def init_db():
+    if not os.path.exists(DB_PATH):
+        with open(DB_PATH, 'w', encoding='utf-8') as f:
+            json.dump({"documentos": [], "internet": [], "historial": []}, f, indent=4)
 
-.canvas-3d::after {
-    content: attr(data-label);
-    position: absolute;
-    top: 6px;
-    left: 8px;
-    font-size: 0.7rem;
-    color: #4a4a5e;
-    z-index: 10;
-    pointer-events: none;
-}
+def save_to_db(key, entry):
+    with open(DB_PATH, 'r+', encoding='utf-8') as f:
+        data = json.load(f)
+        data[key].append(entry)
+        f.seek(0)
+        json.dump(data, f, indent=4, ensure_ascii=False)
+        f.truncate()
 
-/* CANVAS 5: Configuración del Chat Gigante Fusionado */
-.main-giant {
-    grid-column: 2;
-    grid-row: 2 / span 2; /* Ocupa el centro y el espacio de abajo */
-    background-color: #141419;
-    border: 1px solid #00ffcc33;
-    border-radius: 6px;
-    padding: 15px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    box-shadow: inset 0 0 20px rgba(0, 255, 204, 0.02);
-    min-height: 0; /* CORRECCIÓN: Evita que el contenedor colapse y rompa el Grid */
-}
+def read_db():
+    with open(DB_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-.chat-header h3 {
-    font-size: 0.95rem;
-    color: #00ffcc;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
+# --- HERRAMIENTAS QUE LA IA EJECUTA EN TIEMPO REAL ---
 
-#chat-messages {
-    flex-grow: 1;
-    background-color: #09090b;
-    border: 1px solid #22222b;
-    border-radius: 4px;
-    padding: 12px;
-    overflow-y: auto;
-    font-size: 0.9rem;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-height: 0; /* CORRECCIÓN: Permite scroll correcto en textos masivos */
-}
+def inyectar_codigo_3d(canvas_id, codigo_js):
+    """Guarda las instrucciones que se ejecutarán en el frontend."""
+    return {"status": "success", "code_3d": codigo_js, "target": canvas_id}
 
-.chat-controls {
-    display: flex;
-    gap: 8px;
-    width: 100%;
-}
+def buscar_en_internet(query):
+    """Busca información verídica en la web usando DuckDuckGo de forma gratuita."""
+    try:
+        with DDGS() as ddgs:
+            results = [r for r in ddgs.text(query, max_results=3)]
+            if results:
+                textos_web = "\n".join([f"Fuente: {r['href']} - Datos: {r['body']}" for r in results])
+                save_to_db("internet", {"query": query, "resultado": textos_web})
+                return {"status": "success", "data": textos_web}
+            return {"status": "success", "data": "No se encontraron resultados web recientes."}
+    except Exception as e:
+        print(f"Error en buscador web: {e}")
+        return {"status": "error", "data": "No se pudo conectar a los servidores de búsqueda web."}
 
-input[type="text"] {
-    flex-grow: 1;
-    background-color: #1a1a22;
-    border: 1px solid #2d2d3d;
-    color: white;
-    padding: 10px;
-    border-radius: 4px;
-    outline: none;
-    transition: border-color 0.2s;
-}
+# Esquema de funciones expuestas al cerebro analítico
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "inyectar_codigo_3d",
+            "description": "Dibuja figuras, luces o animaciones 3D usando Three.js en uno de los 7 canvas disponibles (canvas-1, canvas-2, canvas-3, canvas-4, canvas-6, canvas-7, canvas-8). El canvas-5 NO existe para 3D ya que es el panel del chat.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "canvas_id": {
+                        "type": "string",
+                        "enum": ["canvas-1", "canvas-2", "canvas-3", "canvas-4", "canvas-6", "canvas-7", "canvas-8"],
+                        "description": "El ID exacto del canvas donde se añadirá el objeto."
+                    },
+                    "codigo_js": {
+                        "type": "string",
+                        "description": "Código JavaScript para Three.js. Debe usar 'scenes[canvas_id]' para añadir objetos (ej: scenes['canvas-1'].add(mesh)) y empujar funciones al array 'updateRegistries[canvas_id]' si requiere animación continua."
+                    }
+                },
+                "required": ["canvas_id", "codigo_js"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_en_internet",
+            "description": "Busca información en la red cuando el usuario pregunte de eventos recientes, datos actuales o conceptos que desconozcas por completo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Término de búsqueda preciso en lenguaje natural."}
+                },
+                "required": ["query"]
+            }
+        }
+    }
+]
 
-input[type="text"]:focus {
-    border-color: #00ffcc;
-}
+# --- LÓGICA DE GESTIÓN DEL CHAT CON PROTOCOLO SEGURO ---
 
-button {
-    background-color: #00ffcc;
-    color: #09090b;
-    border: none;
-    padding: 10px 20px;
-    font-weight: bold;
-    border-radius: 4px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background-color 0.2s, transform 0.1s;
-}
+@app.route('/chat', methods=['POST'])
+def handle_chat():
+    user_message = request.json.get('message', '').strip()
+    if not user_message:
+        return jsonify({"error": "Mensaje vacío"}), 400
 
-button:hover { 
-    background-color: #00cca3; 
-}
+    memoria = read_db()
+    documentos_aprendidos = str(memoria.get("documentos", []))[-3000:] 
+    
+    system_instruction = (
+        "Eres el núcleo central de un entorno modular de desarrollo de inteligencia artificial. "
+        "Tienes control sobre 7 visores gráficos 3D (canvas-1 a canvas-8, omitiendo el canvas-5 que es tu caja física de chat). "
+        "Cuentas con acceso directo a memoria persistente local en formato JSON. "
+        f"Conocimientos asimilados de tus PDFs previos: {documentos_aprendidos}. "
+        "Si el usuario pide crear elementos visuales, invoca 'inyectar_codigo_3d'. "
+        "Si te pide datos que no conoces o eventos del presente, invoca obligatoriamente 'buscar_en_internet'."
+    )
 
-button:active {
-    transform: scale(0.98);
-}
+    messages = [
+        {"role": "system", "content": system_instruction},
+        {"role": "user", "content": user_message}
+    ]
 
-.btn-secondary {
-    background-color: #22222b;
-    color: #ffffff;
-    border: 1px solid #333344;
-    flex: 1; /* Distribuye espacio equitativo en botones de archivos */
-}
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=TOOLS,
+            tool_choice="auto"
+        )
+        
+        response_message = response.choices[0].message
+        bot_response = response_message.content or ""
+        code_3d_to_send = ""
 
-.btn-secondary:hover { 
-    background-color: #2d2d3a; 
-}
+        if response_message.tool_calls:
+            messages.append(response_message)
+            
+            for tool_call in response_message.tool_calls:
+                function_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+                
+                if function_name == "inyectar_codigo_3d":
+                    res_tool = inyectar_codigo_3d(arguments['canvas_id'], arguments['codigo_js'])
+                    code_3d_to_send = res_tool["code_3d"]
+                    bot_response = f"Ejecutando script de renderizado 3D en tiempo real sobre el `{arguments['canvas_id']}`."
+                    tool_content = json.dumps(res_tool)
+                    
+                elif function_name == "buscar_en_internet":
+                    res_tool = buscar_en_internet(arguments['query'])
+                    bot_response = f"He consultado la web sobre '{arguments['query']}'. Aquí están los resultados:\n{res_tool['data']}"
+                    tool_content = json.dumps(res_tool)
 
-/* Estructuración Avanzada de Mensajes para Evitar Desbordes */
-.message { 
-    line-height: 1.4;
-    word-break: break-word; /* CORRECCIÓN: Evita que enlaces largos o códigos de la IA rompan la vista */
-    padding: 6px 10px;
-    border-radius: 4px;
-    background-color: rgba(255, 255, 255, 0.02);
-}
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": function_name,
+                    "content": tool_content
+                })
 
-.message.user { 
-    color: #4da6ff; 
-    border-left: 3px solid #4da6ff;
-}
+        if not bot_response:
+            bot_response = "Procesamiento completado correctamente sin salida de texto."
 
-.message.bot { 
-    color: #00ff88; 
-    border-left: 3px solid #00ff88;
-    background-color: rgba(0, 255, 136, 0.01);
-}
+        save_to_db("historial", {"user": user_message, "bot": bot_response})
+        return jsonify({"response": bot_response, "code_3d": code_3d_to_send})
 
-.message.system { 
-    color: #ffaa00; 
-    font-style: italic; 
-    border-left: 3px solid #ffaa00;
-}
+    except Exception as e:
+        print(f"Fallo en el bucle del cerebro: {e}")
+        return jsonify({"response": "Error interno al consultar mi cerebro de IA.", "code_3d": ""}), 500
 
-/* Personalización del Scrollbar para estilo tecnológico */
-#chat-messages::-webkit-scrollbar {
-    width: 6px;
-}
-#chat-messages::-webkit-scrollbar-track {
-    background: #09090b;
-}
-#chat-messages::-webkit-scrollbar-thumb {
-    background: #22222b;
-    border-radius: 3px;
-}
-#chat-messages::-webkit-scrollbar-thumb:hover {
-    background: #00ffcc44;
-}
+@app.route('/upload-pdf', methods=['POST'])
+def handle_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se detectó ningún archivo"}), 400
+    file = request.files['file']
+    
+    try:
+        reader = pypdf.PdfReader(file)
+        extracted_text = "".join([page.extract_text() for page in reader.pages])
+        
+        save_to_db("documentos", {"file_name": file.filename, "content": extracted_text})
+        return jsonify({"response": f"El documento '{file.filename}' ha sido leído y guardado con éxito en mi memoria persistente."})
+    except Exception as e:
+        print(f"Error procesando PDF: {e}")
+        return jsonify({"error": "No se pudo extraer el texto del PDF correctamente."}), 500
+
+if __name__ == '__main__':
+    init_db()
+    app.run(port=5000, debug=True)
