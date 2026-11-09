@@ -4,84 +4,85 @@
     <meta charset="UTF-8">
     <title>E.V.A.I. - S.I.N.D.D.I. Core Studio</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- Three.js para las estaciones 3D -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
     <div class="ide-container">
-        <!-- ========================================== -->
-        <!-- COLUMNA IZQUIERDA: Canvas 1, 2 y 3         -->
-        <!-- ========================================== -->
-        
-        <!-- CANVAS 1: Ramal / Árbol de Archivos -->
+        <!-- CANVAS 1: Ramal / Árbol de Carpetas y Archivos -->
         <div class="panel" id="canvas-1">
             <h3>📁 Canvas 1: Ramal de Archivos</h3>
+            <div style="margin-bottom: 6px;">
+                <input type="file" id="folder-input" webkitdirectory directory multiple style="font-size: 11px; width: 100%; color: #cbd5e1;">
+            </div>
             <div id="file-tree" class="file-tree">
-                <!-- Árbol interactivo generado dinámicamente -->
+                <p style="color: #94a3b8; font-size: 11px;">Selecciona una carpeta madre para cargar el ramal completo.</p>
             </div>
         </div>
 
-        <!-- CANVAS 2: Estación de Modelado y Texturas PBR -->
+        <!-- CANVAS 2: Modelado & Materiales PBR -->
         <div class="panel" id="canvas-2">
             <h3>🛠️ Canvas 2: Modelado & Materiales PBR</h3>
+            <div class="panel-toolbar">
+                <button class="panel-btn" id="btn-load-editable">📁 Editable</button>
+                <input type="file" id="editable-file-input" style="display:none;" accept=".glb,.gltf,.obj,.json">
+                <button class="panel-btn" id="btn-load-texture">🎨 Textura</button>
+                <input type="file" id="texture-file-input" style="display:none;" accept="image/*">
+                <button class="panel-btn success" id="btn-export-canvas2">💾 Exportar</button>
+            </div>
         </div>
 
-        <!-- CANVAS 3: Biblioteca de Conocimiento de S.I.N.D.D.I. -->
+        <!-- CANVAS 3: Biblioteca de Conocimiento por Temas -->
         <div class="panel" id="canvas-3">
             <h3>🧠 Canvas 3: Biblioteca de Conocimiento</h3>
-            
-            <!-- Área de ingesta de PDFs para alimentar la memoria local -->
-            <div class="upload-area" style="padding: 4px 0; border-bottom: 1px solid #334155; margin-bottom: 6px; display: flex; gap: 4px; align-items: center;">
-                <input type="file" id="pdf-file" accept=".pdf" style="font-size: 11px; width: 150px; color: #cbd5e1;">
-                <button id="btn-upload" style="background: #10b981; border: none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">Asimilar</button>
+            <div class="upload-area" style="padding-bottom: 4px; border-bottom: 1px solid #334155; margin-bottom: 6px; display: flex; gap: 4px; align-items: center;">
+                <input type="file" id="pdf-file" accept=".pdf" style="font-size: 11px; width: 130px; color: #cbd5e1;">
+                <button id="btn-upload" class="panel-btn success">Asimilar</button>
             </div>
-
-            <div id="knowledge-library" class="knowledge-list" style="overflow-y: auto; flex: 1;">
-                <!-- Conceptos asimilados de PDFs y memoria -->
+            <div id="knowledge-library" class="knowledge-list">
+                <p style="font-size: 11px; color: #94a3b8;">Sin documentos clasificados.</p>
             </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- COLUMNA CENTRO: Canvas 4 y 5               -->
-        <!-- ========================================== -->
-
-        <!-- CANVAS 4: Entorno 3D / Avatar de S.I.N.D.D.I. -->
+        <!-- CANVAS 4: Entorno 3D & Avatar (Controlador Principal) -->
         <div class="panel" id="canvas-4">
-            <h3>✨ Canvas 4: Entorno 3D & Avatar</h3>
+            <h3>✨ Canvas 4: Entorno 3D & Avatar (Núcleo Visual)</h3>
         </div>
 
-        <!-- CANVAS 5: Núcleo de Chat con S.I.N.D.D.I. -->
+        <!-- CANVAS 5: Chat con S.I.N.D.D.I. (Soporte >10,000 palabras) -->
         <div class="panel" id="canvas-5">
             <h3>💬 S.I.N.D.D.I. (Asistente Local)</h3>
             <div id="chat-messages" class="chat-messages">
-                <div class="message sinddi">Hola. Soy S.I.N.D.D.I., tu sistema autónomo sin internet. ¿Qué programa o asset tridimensional vamos a desarrollar hoy?</div>
+                <div class="message sinddi">Hola. Soy S.I.N.D.D.I., tu sistema autónomo. Controla los canvas desde aquí o chatea sin límites.</div>
             </div>
             <div class="chat-input-area">
-                <input type="text" id="user-input" placeholder="Pregúntale a S.I.N.D.D.I. o pídele código...">
+                <textarea id="user-input" placeholder="Pregúntale a S.I.N.D.D.I. (admite consultas extensas)..."></textarea>
                 <button id="btn-send">Enviar</button>
             </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- COLUMNA DERECHA: Canvas 6, 7 y 8           -->
-        <!-- ========================================== -->
-
-        <!-- CANVAS 6: Consola de Ejecución del Ramal -->
+        <!-- CANVAS 6: Consola Ejecutora -->
         <div class="panel" id="canvas-6">
             <h3>💻 Canvas 6: Consola Ejecutora</h3>
             <iframe id="runtime-iframe" sandbox="allow-scripts"></iframe>
         </div>
 
-        <!-- CANVAS 7: Estación de Rigging y Animación -->
+        <!-- CANVAS 7: Animación & Rigging -->
         <div class="panel" id="canvas-7">
             <h3>🎬 Canvas 7: Animación & Rigging</h3>
+            <div class="panel-toolbar">
+                <button class="panel-btn" id="btn-load-rig">🦴 Cargar Rig</button>
+                <input type="file" id="rig-file-input" style="display:none;" accept=".glb,.gltf,.fbx">
+                <button class="panel-btn success" id="btn-export-canvas7">💾 Exportar Animación</button>
+            </div>
         </div>
 
-        <!-- CANVAS 8: Matriz de Errores y Coherencia -->
+        <!-- CANVAS 8: Depurador de Coherencia con Errores Clickeables -->
         <div class="panel" id="canvas-8">
             <h3>🚨 Canvas 8: Depurador de Coherencia</h3>
             <div id="audit-matrix" class="audit-list">
-                <p class="success-text">Sin conflictos estructurales detectados en el ramal.</p>
+                <div class="error-item" onclick="window.jumpToOrigin('app.js', 42)">
+                    <strong>⚠️ Error [REF-42]:</strong> Variable no definida en app.js (Línea 42)
+                </div>
             </div>
         </div>
     </div>
