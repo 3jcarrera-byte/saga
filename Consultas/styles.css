@@ -1,3 +1,6 @@
+/* ==========================================
+   CONFIGURACIÓN GLOBAL DE S.I.N.D.D.I. STUDIO
+   ========================================== */
 body, html {
     margin: 0;
     padding: 0;
@@ -5,12 +8,18 @@ body, html {
     background-color: #0f172a;
     color: #e2e8f0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overflow: hidden;
 }
 
+/* ==========================================
+   DISTRIBUCIÓN DE LA REJILLA DE 8 PANELES
+   ========================================== */
 .ide-container {
     display: grid;
-    grid-template-columns: 240px 1fr 1fr 1fr 280px;
-    grid-template-rows: 1fr 1fr;
+    /* 3 Columnas principales: Izquierda, Centro, Derecha */
+    grid-template-columns: 1fr 1fr 1fr;
+    /* 3 Filas para apilar los paneles verticalmente en cada columna */
+    grid-template-rows: 1fr 1fr 1fr;
     height: 100vh;
     gap: 6px;
     padding: 6px;
@@ -25,6 +34,9 @@ body, html {
     flex-direction: column;
     overflow: hidden;
     padding: 10px;
+    box-sizing: border-box;
+    min-height: 0;
+    min-width: 0;
 }
 
 .panel h3 {
@@ -33,22 +45,31 @@ body, html {
     color: #38bdf8;
     border-bottom: 1px solid #334155;
     padding-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ==========================================
-   DISTRIBUCIÓN DE LA REJILLA DE 8 PANELOS
+   POSICIONAMIENTO EXACTO SEGÚN TU ORDEN
    ========================================== */
-#canvas-1 { grid-column: 1; grid-row: 1 / span 2; } /* Ramal de archivos (izquierda completa) */
-#canvas-2 { grid-column: 2; grid-row: 1; }          /* Estación de Modelado & Materiales PBR */
-#canvas-4 { grid-column: 3; grid-row: 1; }          /* Entorno 3D & Avatar de S.I.N.D.D.I. */
-#canvas-5 { grid-column: 4; grid-row: 1; }          /* Chat de S.I.N.D.D.I. */
-#canvas-3 { grid-column: 5; grid-row: 1; }          /* Biblioteca de Conocimiento */
+/* Columna Izquierda: 1, 2 y 3 de arriba a abajo */
+#canvas-1 { grid-column: 1; grid-row: 1; }
+#canvas-2 { grid-column: 1; grid-row: 2; }
+#canvas-3 { grid-column: 1; grid-row: 3; }
 
-#canvas-6 { grid-column: 2 / span 2; grid-row: 2; } /* Consola Ejecutora (Abarca columnas 2 y 3 abajo) */
-#canvas-7 { grid-column: 4; grid-row: 2; }          /* Animación & Rigging */
-#canvas-8 { grid-column: 5; grid-row: 2; }          /* Depurador de Coherencia */
+/* Columna Central: 4 y 5 de arriba a abajo (el 4 puede ocupar 2 filas si se prefiere, o distribuirse equitativamente) */
+#canvas-4 { grid-column: 2; grid-row: 1 / span 2; }
+#canvas-5 { grid-column: 2; grid-row: 3; }
 
-/* Visores 3D internos de las estaciones */
+/* Columna Derecha: 6, 7 y 8 de arriba a abajo */
+#canvas-6 { grid-column: 3; grid-row: 1; }
+#canvas-7 { grid-column: 3; grid-row: 2; }
+#canvas-8 { grid-column: 3; grid-row: 3; }
+
+/* ==========================================
+   ESTILOS DE VISORES 3D Y COMPONENTES
+   ========================================== */
 #viewport-canvas-2,
 #viewport-canvas-4,
 #viewport-canvas-7,
@@ -71,11 +92,27 @@ body, html {
     padding-right: 4px;
 }
 
-.message.sinddi {
-    background: #334155;
+.message {
     padding: 8px;
     border-radius: 4px;
+    word-break: break-word;
+}
+
+.message.user {
+    background: #1e293b;
+    border-left: 3px solid #38bdf8;
+}
+
+.message.bot, .message.sinddi {
+    background: #334155;
     border-left: 3px solid #ec4899; /* Tono distintivo para S.I.N.D.D.I. */
+}
+
+.message.system {
+    background: #0f172a;
+    border-left: 3px solid #f59e0b;
+    font-style: italic;
+    font-size: 12px;
 }
 
 .chat-input-area {
@@ -91,6 +128,11 @@ body, html {
     color: #fff;
     padding: 6px;
     border-radius: 4px;
+    outline: none;
+}
+
+.chat-input-area input:focus {
+    border-color: #38bdf8;
 }
 
 .chat-input-area button {
@@ -100,6 +142,11 @@ body, html {
     padding: 6px 12px;
     border-radius: 4px;
     cursor: pointer;
+    font-weight: 600;
+}
+
+.chat-input-area button:hover {
+    background: #0369a1;
 }
 
 #runtime-iframe {
@@ -108,4 +155,16 @@ body, html {
     background: #ffffff;
     border: none;
     border-radius: 4px;
+    flex: 1;
+}
+
+.file-tree, .knowledge-list, .audit-list {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 12px;
+}
+
+.success-text {
+    color: #34d399;
+    margin: 0;
 }
