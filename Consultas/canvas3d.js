@@ -3,16 +3,22 @@
 // ==========================================
 
 const active3DCanvasIds = ['canvas-2', 'canvas-4', 'canvas-7'];
-const scenes = {};
-const renderers = {};
-const cameras = {};
-const updateRegistries = {};
+
+// Exponer globalmente para permitir inyección de código de S.I.N.D.D.I.
+window.scenes = window.scenes || {};
+window.renderers = window.renderers || {};
+window.cameras = window.cameras || {};
+window.updateRegistries = window.updateRegistries || {};
 
 active3DCanvasIds.forEach(canvasId => {
     const container = document.getElementById(canvasId);
     if (!container) return;
 
-    // Crear un visor independiente dentro de cada panel para evitar colisiones de tamaño
+    // Evitar duplicados si el script se recarga
+    const existingViewport = document.getElementById(`viewport-${canvasId}`);
+    if (existingViewport) existingViewport.remove();
+
+    // Crear un visor independiente dentro de cada panel
     const viewport = document.createElement('div');
     viewport.id = `viewport-${canvasId}`;
     viewport.style.width = '100%';
@@ -25,8 +31,8 @@ active3DCanvasIds.forEach(canvasId => {
 
     // Inicializar Escena, Cámara y Renderizador WebGL
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, viewport.clientWidth / viewport.clientHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const camera = new THREE.PerspectiveCamera(75, viewport.clientWidth / viewport.clientHeight || 1, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 
     renderer.setSize(viewport.clientWidth, viewport.clientHeight);
     viewport.appendChild(renderer.domElement);
@@ -41,11 +47,11 @@ active3DCanvasIds.forEach(canvasId => {
 
     camera.position.z = 4;
 
-    // Asignar referencias globales para control externo por parte de S.I.N.D.D.I.
-    scenes[canvasId] = scene;
-    renderers[canvasId] = renderer;
-    cameras[canvasId] = camera;
-    updateRegistries[canvasId] = [];
+    // Asignar referencias globales
+    window.scenes[canvasId] = scene;
+    window.renderers[canvasId] = renderer;
+    window.cameras[canvasId] = camera;
+    window.updateRegistries[canvasId] = [];
 
     // Objetos iniciales representativos por cada estación de trabajo
     if (canvasId === 'canvas-4') {
@@ -59,7 +65,7 @@ active3DCanvasIds.forEach(canvasId => {
         const coreMesh = new THREE.Mesh(geometry, material);
         scene.add(coreMesh);
         
-        updateRegistries[canvasId].push(() => {
+        window.updateRegistries[canvasId].push(() => {
             coreMesh.rotation.x += 0.005;
             coreMesh.rotation.y += 0.01;
         });
@@ -74,7 +80,7 @@ active3DCanvasIds.forEach(canvasId => {
         const boxMesh = new THREE.Mesh(geometry, material);
         scene.add(boxMesh);
 
-        updateRegistries[canvasId].push(() => {
+        window.updateRegistries[canvasId].push(() => {
             boxMesh.rotation.x += 0.005;
             boxMesh.rotation.y += 0.005;
         });
@@ -88,24 +94,30 @@ active3DCanvasIds.forEach(canvasId => {
         const boneMesh = new THREE.Mesh(geometry, material);
         scene.add(boneMesh);
 
-        updateRegistries[canvasId].push(() => {
+        window.updateRegistries[canvasId].push(() => {
             boneMesh.rotation.z += 0.01;
         });
     }
 
-    // Bucle de renderizado y actualización dinámica de animaciones
+    // Bucle de renderizado independiente por estación
     function animate() {
         requestAnimationFrame(animate);
-        updateRegistries[canvasId].forEach(fn => fn());
+        window.updateRegistries[canvasId].forEach(fn => fn());
         renderer.render(scene, camera);
     }
     animate();
 
-    // Redimensionamiento responsivo al ajustar los paneles
-    window.addEventListener('resize', () => {
-        if (!viewport.clientWidth || !viewport.clientHeight) return;
-        camera.aspect = viewport.clientWidth / viewport.clientHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(viewport.clientWidth, viewport.clientHeight);
+    // ResizeObserver avanzado para detectar cambios de tamaño en el panel del grid sin depender solo de window.resize
+    const resizeObserver = new ResizeObserver(entries => {
+        for (let entry of entries) {
+            const width = entry.contentRect.width;
+            const height = entry.contentRect.height;
+            if (width > 0 && height > 0) {
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height);
+            }
+        }
     });
+    resizeObserver.observe(viewport);
 });
