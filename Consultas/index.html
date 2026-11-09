@@ -2,51 +2,63 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Entorno de 7 Canvas 3D + Chat Central Gigante</title>
+    <title>E.V.A.I. - S.I.N.D.D.I. Core Studio</title>
     <link rel="stylesheet" href="styles.css">
-    
-    <!-- CORRECCIÓN 1: Enlace real y seguro a la librería Three.js desde CDNJS -->
-    <script src="https://cloudflare.com"></script>
+    <!-- Three.js para el Canvas 4 (Avatar / 3D) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
-
-    <!-- Cuadrícula Matemática Estricta de 3x3 -->
-    <div id="grid-container">
-        <!-- Fila Superior -->
-        <div id="canvas-1" class="canvas-3d" data-label="Canvas 1 (Sup Izq)"></div>
-        <div id="canvas-4" class="canvas-3d" data-label="Canvas 4 (Sup Centro)"></div>
-        <div id="canvas-6" class="canvas-3d" data-label="Canvas 6 (Sup Der)"></div>
-
-        <!-- Fila Central e Inferior -->
-        <div id="canvas-2" class="canvas-3d" data-label="Canvas 2 (Centro Izq)"></div>
-        
-        <!-- CANVAS 5: El bloque central gigante asignado al CHAT INTEGRADO -->
-        <section id="chat-panel-center" class="main-giant">
-            <header class="chat-header">
-                <h3>Consola Central de Inteligencia</h3>
-            </header>
-            <div id="chat-messages"></div>
-            <div class="chat-controls">
-                <input type="text" id="user-input" placeholder="Comando: 'crea un anillo en canvas-4'...">
-                <button id="btn-send">Enviar</button>
+    <div class="ide-container">
+        <!-- CANVAS 1: Ramal / Árbol de Archivos -->
+        <div class="panel" id="canvas-1">
+            <h3>📁 Canvas 1: Ramal de Archivos</h3>
+            <div id="file-tree" class="file-tree">
+                <!-- Árbol interactivo generado dinámicamente -->
             </div>
-            <div class="chat-controls">
-                <input type="file" id="pdf-file" accept=".pdf" style="display:none;">
-                <button class="btn-secondary" onclick="document.getElementById('pdf-file').click()">📂 Seleccionar PDF</button>
-                <button id="btn-upload" class="btn-secondary">Cargar a JSON</button>
+        </div>
+
+        <!-- CANVAS 3: Biblioteca de Conocimiento de S.I.N.D.D.I. -->
+        <div class="panel" id="canvas-3">
+            <h3>🧠 Canvas 3: Biblioteca de Conocimiento</h3>
+            <div id="knowledge-library" class="knowledge-list">
+                <!-- Conceptos asimilados de PDFs y memoria -->
             </div>
-        </section>
+        </div>
 
-        <div id="canvas-7" class="canvas-3d" data-label="Canvas 7 (Centro Der)"></div>
+        <!-- CANVAS 4: Entorno 3D / Avatar de S.I.N.D.D.I. -->
+        <div class="panel" id="canvas-4">
+            <h3>✨ Canvas 4: Entorno 3D & Avatar</h3>
+            <div id="viewport-3d"></div>
+        </div>
 
-        <div id="canvas-3" class="canvas-3d" data-label="Canvas 3 (Inf Izq)"></div>
-        <!-- El espacio de abajo al centro es absorbido automáticamente por el chat (Canvas 5) -->
-        <div id="canvas-8" class="canvas-3d" data-label="Canvas 8 (Inf Der)"></div>
+        <!-- CANVAS 5: Núcleo de Chat con S.I.N.D.D.I. -->
+        <div class="panel" id="canvas-5">
+            <h3>💬 S.I.N.D.D.I. (Asistente Local)</h3>
+            <div id="chat-messages" class="chat-messages">
+                <div class="message sinddi">Hola. Soy S.I.N.D.D.I., tu sistema autónomo sin internet. ¿Qué programa o concepto vamos a desarrollar hoy?</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Pregúntale a S.I.N.D.D.I. o pídele código...">
+                <button id="send-btn">Enviar</button>
+            </div>
+        </div>
+
+        <!-- CANVAS 6: Consola de Ejecución del Ramal -->
+        <div class="panel" id="canvas-6">
+            <h3>💻 Canvas 6: Consola Ejecutora</h3>
+            <iframe id="runtime-iframe" sandbox="allow-scripts"></iframe>
+        </div>
+
+        <!-- CANVAS 8: Matriz de Errores y Coherencia -->
+        <div class="panel" id="canvas-8">
+            <h3>🚨 Canvas 8: Depurador de Coherencia</h3>
+            <div id="audit-matrix" class="audit-list">
+                <p class="success-text">Sin conflictos estructurales detectados en el ramal.</p>
+            </div>
+        </div>
     </div>
 
-    <!-- Scripts de Lógica Modulares con ejecución diferida -->
-    <script src="canvas3d.js" defer></script>
-    <script src="chat.js" defer></script>
+    <script src="canvas3d.js"></script>
+    <script src="app.js"></script> <!-- O chat.js según tu estructura -->
 </body>
 </html>
