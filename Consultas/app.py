@@ -4,7 +4,7 @@ import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
-from ddgs import DDGS
+from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 CORS(app)
@@ -30,7 +30,7 @@ def read_db():
     with open(DB_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-# --- NÚCLEO DE ACCIÓN FÍSICA Y CREACIÓN DE ARCHIVOS ---
+# --- NÚCLEO DE ACCIÓN FÍSICA (CREAR Y BORRAR ARCHIVOS) ---
 def crear_archivo_local(nombre_archivo, contenido):
     """Crea un archivo real en la carpeta madre del proyecto."""
     try:
@@ -42,12 +42,21 @@ def crear_archivo_local(nombre_archivo, contenido):
     except Exception as e:
         return f"Error al crear el archivo físico: {str(e)}"
 
+def eliminar_archivo_local(nombre_archivo):
+    """Elimina un archivo físico del directorio del proyecto."""
+    try:
+        nombre_limpio = os.path.basename(nombre_archivo)
+        if os.path.exists(nombre_limpio):
+            os.remove(nombre_limpio)
+            save_to_db("historial", {"evento": "Eliminación de archivo físico", "archivo": nombre_limpio, "estado": "Éxito"})
+            return f"🗑️ Archivo '{nombre_limpio}' eliminado de la carpeta madre."
+        else:
+            return f"⚠️ El archivo '{nombre_limpio}' no existe en la carpeta madre."
+    except Exception as e:
+        return f"Error al eliminar el archivo: {str(e)}"
+
 # --- NÚCLEO DE AUTO-MODIFICACIÓN Y PERMISOS DE CÓDIGO ---
 def modificar_archivo_proyecto(nombre_archivo, nuevo_contenido):
-    """
-    Permite a S.I.N.D.D.I. modificar, actualizar o corregir sus propios archivos de código 
-    (index.html, styles.css, chat.js, canvas3d.js, app.py) para evolucionar su interfaz o corregir errores.
-    """
     archivos_permitidos = ["index.html", "styles.css", "chat.js", "canvas3d.js", "app.py"]
     if nombre_archivo not in archivos_permitidos:
         return {"status": "error", "mensaje": "Acceso denegado: Archivo protegido o no autorizado."}
@@ -55,12 +64,7 @@ def modificar_archivo_proyecto(nombre_archivo, nuevo_contenido):
     try:
         with open(nombre_archivo, 'w', encoding='utf-8') as f:
             f.write(nuevo_contenido)
-        
-        save_to_db("historial", {
-            "evento": "Auto-modificación de código",
-            "archivo": nombre_archivo,
-            "estado": "Éxito"
-        })
+        save_to_db("historial", {"evento": "Auto-modificación de código", "archivo": nombre_archivo, "estado": "Éxito"})
         return {"status": "success", "mensaje": f"Archivo '{nombre_archivo}' modificado y actualizado exitosamente por S.I.N.D.D.I."}
     except Exception as e:
         return {"status": "error", "mensaje": f"Fallo al modificar el archivo: {str(e)}"}
@@ -91,43 +95,69 @@ def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
     documentos = memoria.get("documentos", [])
     
-    # 1. ORDEN DE CREACIÓN DE ARCHIVOS FÍSICOS (ej. "agrega en la carpeta madre un archivo tipo .txt que diga...")
+    # 1. ORDEN DE BORRADO DE ARCHIVOS FÍSICOS
+    if "borra" in query_lower or "elimina" in query_lower or "remueve" in query_lower:
+        match_nombre = re.search(r'(?:archivo|el archivo)\s+([a-zA-Z0-9_\-]+\.?[a-zA-Z0-9]*)', query_lower)
+        nombre_a_borrar = match_nombre.group(1) if match_nombre else "logro.txt"
+        if "." not in nombre_a_borrar:
+            nombre_a_borrar += ".txt"
+        resultado_borrado = eliminar_archivo_local(nombre_a_borrar)
+        return f"🛠️ [Acción de Borrado]\n{resultado_borrado}", ""
+
+    # 2. ORDEN DE CREACIÓN DE ARCHIVOS FÍSICOS
     if "agrega en la carpeta madre" in query_lower or "crea un archivo" in query_lower or "archivo" in query_lower and "diga" in query_lower:
         match_texto = re.search(r'diga:\s*["\']([^"\']+)["\']', query) or re.search(r'que diga\s+(.+)', query, re.IGNORECASE)
         contenido_txt = match_texto.group(1).strip() if match_texto else "LO LOGRÉ"
-        
         match_nombre = re.search(r'archivo\s+(?:tipo\s+)?([a-zA-Z0-9_\-]+\.txt)', query_lower)
         nombre_txt = match_nombre.group(1) if match_nombre else "logro.txt"
-        
         resultado_creacion = crear_archivo_local(nombre_txt, contenido_txt)
-        return f"🛠️ [Acción Ejecutada por S.I.N.D.D.I.]\n{resultado_creacion}\nContenido inyectado: '{contenido_txt}'"
+        return f"🛠️ [Acción Ejecutada]\n{resultado_creacion}\nContenido inyectado: '{contenido_txt}'", ""
 
-    # 2. ORDEN 3D (ej. "dibuja una esfera azul en el canvas 2")
-    if "dibuja" in query_lower or "esfera" in query_lower or "canvas 2" in query_lower:
-        codigo_3d = "const geometry = new THREE.SphereGeometry(1, 32, 32);\nconst material = new THREE.MeshBasicMaterial({color: 0x0000ff});\nconst sphere = new THREE.Mesh(geometry, material);\nscene.add(sphere);"
-        return (
+    # 3. ORDEN 3D (ej. "dibuja una esfera roja/azul en el canvas 2")
+    if "dibuja" in query_lower or "esfera" in query_lower or "cubo" in query_lower or "canvas 2" in query_lower:
+        # Detectar color solicitado
+        color_hex = "0x0000ff" # por defecto azul
+        color_nombre = "azul"
+        if "rojo" in query_lower or "roja" in query_lower:
+            color_hex = "0xff0000"
+            color_nombre = "rojo"
+        elif "verde" in query_lower:
+            color_hex = "0x00ff00"
+            color_nombre = "verde"
+        elif "amarillo" in query_lower:
+            color_hex = "0xffff00"
+            color_nombre = "amarillo"
+
+        # Detectar forma
+        forma = "SphereGeometry(1, 32, 32)"
+        tipo_figura = "Esfera"
+        if "cubo" in query_lower:
+            forma = "BoxGeometry(1.5, 1.5, 1.5)"
+            tipo_figura = "Cubo"
+
+        codigo_3d = f"const geometry = new THREE.{forma};\nconst material = new THREE.MeshBasicMaterial({{color: {color_hex}}});\nconst mesh = new THREE.Mesh(geometry, material);\nscene.add(mesh);"
+        
+        respuesta_texto = (
             f"🎨 [Motor 3D - Canvas 2 Activado]\n"
-            f"Geometría procesada y lista para renderizado en pantalla:\n\n"
+            f"Geometría procesada ({tipo_figura} de color {color_nombre}) y enviada al motor de renderizado:\n\n"
             f"```javascript\n{codigo_3d}\n```"
         )
+        return respuesta_texto, codigo_3d
 
-    # 3. Orden de auto-modificación de código
+    # 4. Orden de auto-modificación de código
     if "modifica el archivo" in query_lower or "actualiza el codigo" in query_lower or "reescribe" in query_lower:
-        return (
-            "🛠️ [Permiso de Modificación Activo]\n"
-            "Indícame el nombre exacto del archivo (`styles.css`, `index.html`, etc.) y el bloque de código completo que deseas aplicar."
-        )
+        return "🛠️ [Permiso de Modificación Activo]\nIndícame el nombre exacto del archivo y el código completo.", ""
 
-    # 4. Orden de búsqueda en internet
+    # 5. Orden de búsqueda en internet
     if query_lower.startswith("busca en internet") or query_lower.startswith("investiga sobre"):
         termino = query_lower
         for p in ["busca en internet sobre", "busca en internet", "investiga sobre", "investiga"]:
             termino = termino.replace(p, "")
         termino = termino.strip() or query
         resultados_web = buscar_en_internet(termino)
-        return f"🌐 [Exploración Web Autómata]\nResultados para '{termino}':\n\n{resultados_web}"
+        return f"🌐 [Exploración Web Autómata]\nResultados para '{termino}':\n\n{resultados_web}", ""
 
-    # 5. Búsqueda en memoria local de documentos (Canvas 3)
+    # 6. Búsqueda en memoria local de documentos (Canvas 3)
     mejores_fragmentos = []
     for doc in documentos:
         contenido = doc.get("content", "")
@@ -141,19 +171,12 @@ def procesar_respuesta_autonoma(query, memoria):
     
     if mejores_fragmentos or any(w in query_lower for w in ["redacta", "correo", "presupuesto", "informe", "carta"]):
         contexto = "\n".join([f"- {f[1]}" for f in mejores_fragmentos[:4]]) if mejores_fragmentos else "Protocolo corporativo formal aplicado."
-        return (
-            f"🧠 [Motor de Razonamiento - S.I.N.D.D.I.]\n"
-            f"Basado en mis registros asimilados:\n\n{contexto}\n\n"
-            f"*(Puedes pedirme que modifique componentes visuales o de código directamente si requieres ajustar la interfaz)*"
-        )
+        return f"🧠 [Motor de Razonamiento - S.I.N.D.D.I.]\nRegistros asimilados:\n\n{contexto}", ""
     
     if "hola" in query_lower:
-        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo local. Tengo permisos para crear archivos, gestionar 3D, buscar en la red y modificar códigos."
+        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo local. Puedo crear archivos, borrar archivos, procesar 3D y buscar en la red.", ""
     else:
-        return (
-            f"He registrado tu instrucción ('{query}'). Especifica si deseas crear un archivo físico, "
-            "ejecutar un comando 3D, buscar en la red o modificar componentes de código."
-        )
+        return f"He registrado tu instrucción ('{query}'). Especifica si deseas crear/borrar un archivo, ejecutar un comando 3D o buscar en la red.", ""
 
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
@@ -163,14 +186,17 @@ def handle_chat():
         return jsonify({"error": "Mensaje vacío"}), 400
 
     memoria = read_db()
-    bot_response = procesar_respuesta_autonoma(user_message, memoria)
+    bot_response, codigo_3d = procesar_respuesta_autonoma(user_message, memoria)
 
     save_to_db("historial", {"user": user_message, "bot": bot_response})
-    return jsonify({"response": bot_response, "code_3d": "", "target_canvas": ""}), 200
+    return jsonify({
+        "response": bot_response, 
+        "code_3d": codigo_3d, 
+        "target_canvas": "canvas-2" if codigo_3d else ""
+    }), 200
 
 @app.route('/api/code-patch', methods=['POST'])
 def handle_code_patch():
-    """Endpoint dedicado para que la interfaz o la IA apliquen modificaciones de código en caliente."""
     data = request.get_json(silent=True) or {}
     filename = data.get('filename')
     content = data.get('content')
@@ -205,7 +231,7 @@ def handle_pdf():
         reader = pypdf.PdfReader(file)
         extracted_text = "".join([page.extract_text() for page in reader.pages])
         save_to_db("documentos", {"file_name": file.filename, "content": extracted_text})
-        return jsonify({"message": f"El documento '{file.filename}' ha sido asimilado y expande mi base de conocimientos."}), 200
+        return jsonify({"message": f"El documento '{file.filename}' ha sido asimilado."}), 200
     except Exception as e:
         return jsonify({"error": "Error al procesar PDF"}), 500
 
