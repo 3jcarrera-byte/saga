@@ -259,7 +259,7 @@ app.post('/api/chat', async (req, res) => {
 
         if (hasHighConfidenceChunk) {
             responseText += `📚 **Conocimiento Relevante Extraído de Documentos:**\n\n`;
-            topChunks.forEach((chunk, index) => {
+            topChunks.forEach((chunk) => {
                 responseText += `> **[Fuente: ${chunk.source} | Coincidencia: ${(chunk.score * 100).toFixed(1)}%]**\n`;
                 responseText += `${chunk.text}\n\n`;
             });
@@ -279,7 +279,7 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ==========================================
-// ENDPOINT DE SUBIDA E INGESTIÓN DE PDF
+// ENDPOINT DE SUBIDA E INGESTIÓN DE PDF (ROBUSTO)
 // ==========================================
 app.post('/api/upload', upload.single('pdf'), async (req, res) => {
     try {
@@ -316,25 +316,27 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
                 source: req.file.originalname
             });
 
+            // ====== MOTOR DE EXTRACCIÓN MEJORADO (CON TOLERANCIA A SALTOS E INCISOS) ======
             const sentences = textChunk.split(/(?<=[.?!])\s+/);
             for (const sentence of sentences) {
-                const cleanSentence = sentence.trim();
+                const cleanSentence = sentence.replace(/\r?\n|\r/g, ' ').trim();
                 if (cleanSentence.length < 15) continue;
 
-                const pattern = /([^.]+?)\s+(?:es|se\s+define\s+como|consiste\s+en)\s+([^.]+)/i;
+                const pattern = /^([^,.:;]{3,40})(?:,[^,]+,)?\s+(?:es|se\s+define\s+como|consiste\s+en|representa)\s+(.+)$/i;
                 const match = cleanSentence.match(pattern);
 
-                if (match && match.length >= 3) {
+                if (match) {
                     let conceptCandidate = match[1].replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s\-_]/g, '').trim();
                     let detailsCandidate = match[2].trim();
 
-                    if (conceptCandidate.length > 2 && conceptCandidate.length < 50 && detailsCandidate.length > 10) {
-                        conceptCandidate = conceptCandidate.charAt(0).toUpperCase() + conceptCandidate.slice(1);
-                        smartUpsertMemory(conceptCandidate, `[Extraído de ${req.file.originalname}]: ${detailsCandidate}`);
+                    if (conceptCandidate.length > 2 && detailsCandidate.length > 8) {
+                        conceptCandidate = conceptCandidate.charAt(0).toUpperCase() + conceptCandidate.slice(1).toLowerCase();
+                        smartUpsertMemory(conceptCandidate, `[Asimilado de ${req.file.originalname}]: ${detailsCandidate}`);
                         extractedMemoriesCount++;
                     }
                 }
             }
+            // ============================================================================
         }
 
         const currentDb = loadVectorStore();
@@ -457,9 +459,7 @@ app.post('/api/analyze-code', async (req, res) => {
         const { files } = req.body;
         if (!files || !files.length) return res.status(400).json({ error: 'No hay archivos.' });
 
-        const codeContext = files.map(f => `=== FILE: ${f.filename} ===\n${f.content}`).join('\n\n');
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-
         res.write(`🔍 [Auditoría Local E.V.A.I.]\nSe han verificado ${files.length} archivo(s).\n\n`);
         res.write(`Archivos analizados:\n${files.map(f => `- ${f.filename}`).join('\n')}\n\n`);
         res.write(`Estructura estática coherente. Sin errores críticos de importación detectados.`);
@@ -514,5 +514,5 @@ app.post('/api/save-project', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor de Memoria Evolutiva y Ensamble Semántico ejecutándose en http://localhost:${PORT}`);
+    console.log(`🚀 Servidor E.V.A.I. optimizado ejecutándose en http://localhost:${PORT}`);
 });
