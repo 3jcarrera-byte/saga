@@ -53,8 +53,8 @@ body, html {
 #canvas-2 { grid-column: 1; grid-row: 2; }
 #canvas-3 { grid-column: 1; grid-row: 3; }
 
-#canvas-4 { grid-column: 2; grid-row: 1 / span 2; }
-#canvas-5 { grid-column: 2; grid-row: 3; }
+#canvas-4 { grid-column: 2; grid-row: 1; }
+#canvas-5 { grid-column: 2; grid-row: 2 / span 2; }
 
 #canvas-6 { grid-column: 3; grid-row: 1; }
 #canvas-7 { grid-column: 3; grid-row: 2; }
