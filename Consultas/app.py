@@ -4,7 +4,7 @@ import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 app = Flask(__name__)
 CORS(app)
@@ -76,6 +76,13 @@ def buscar_en_internet(query):
             results = [r for r in ddgs.text(query, max_results=3)]
             if results:
                 textos_web = "\n".join([f"• Fuente: {r['href']}\n  Dato: {r['body']}" for r in results])
+                
+                # Sincronización automática con Canvas 3
+                save_to_db("documentos", {
+                    "file_name": f"Web_{query.replace(' ', '_')}.txt",
+                    "content": f"Investigación autónoma web sobre: {query}\n\n{textos_web}"
+                })
+                
                 save_to_db("internet", {"query": query, "resultado": textos_web})
                 return textos_web
             return "No se encontraron resultados web recientes."
@@ -115,8 +122,7 @@ def procesar_respuesta_autonoma(query, memoria):
 
     # 3. ORDEN 3D (ej. "dibuja una esfera roja/azul en el canvas 2")
     if "dibuja" in query_lower or "esfera" in query_lower or "cubo" in query_lower or "canvas 2" in query_lower:
-        # Detectar color solicitado
-        color_hex = "0x0000ff" # por defecto azul
+        color_hex = "0x0000ff"
         color_nombre = "azul"
         if "rojo" in query_lower or "roja" in query_lower:
             color_hex = "0xff0000"
@@ -128,7 +134,6 @@ def procesar_respuesta_autonoma(query, memoria):
             color_hex = "0xffff00"
             color_nombre = "amarillo"
 
-        # Detectar forma
         forma = "SphereGeometry(1, 32, 32)"
         tipo_figura = "Esfera"
         if "cubo" in query_lower:
@@ -137,9 +142,15 @@ def procesar_respuesta_autonoma(query, memoria):
 
         codigo_3d = f"const geometry = new THREE.{forma};\nconst material = new THREE.MeshBasicMaterial({{color: {color_hex}}});\nconst mesh = new THREE.Mesh(geometry, material);\nscene.add(mesh);"
         
+        # Registrar instrucción 3D en Canvas 3
+        save_to_db("documentos", {
+            "file_name": f"Modelo3D_{tipo_figura}_{color_nombre}.txt",
+            "content": f"Comando geométrico: {query}\nCódigo Three.js generado:\n{codigo_3d}"
+        })
+
         respuesta_texto = (
-            f"🎨 [Motor 3D - Canvas 2 Activado]\n"
-            f"Geometría procesada ({tipo_figura} de color {color_nombre}) y enviada al motor de renderizado:\n\n"
+            f"🎨 [Motor 3D - Canvas 2 Activado & Registrado en Canvas 3]\n"
+            f"Geometría procesada ({tipo_figura} {color_nombre}) y guardada en la base de conocimientos:\n\n"
             f"```javascript\n{codigo_3d}\n```"
         )
         return respuesta_texto, codigo_3d
@@ -155,7 +166,7 @@ def procesar_respuesta_autonoma(query, memoria):
             termino = termino.replace(p, "")
         termino = termino.strip() or query
         resultados_web = buscar_en_internet(termino)
-        return f"🌐 [Exploración Web Autómata]\nResultados para '{termino}':\n\n{resultados_web}", ""
+        return f"🌐 [Exploración Web Autómata & Sincronizada en Canvas 3]\nResultados para '{termino}':\n\n{resultados_web}", ""
 
     # 6. Búsqueda en memoria local de documentos (Canvas 3)
     mejores_fragmentos = []
@@ -174,9 +185,14 @@ def procesar_respuesta_autonoma(query, memoria):
         return f"🧠 [Motor de Razonamiento - S.I.N.D.D.I.]\nRegistros asimilados:\n\n{contexto}", ""
     
     if "hola" in query_lower:
-        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo local. Puedo crear archivos, borrar archivos, procesar 3D y buscar en la red.", ""
+        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo local. Todo aprendizaje del chat, búsqueda o comando se registra automáticamente en el Canvas 3.", ""
     else:
-        return f"He registrado tu instrucción ('{query}'). Especifica si deseas crear/borrar un archivo, ejecutar un comando 3D o buscar en la red.", ""
+        # Registrar interacción general en Canvas 3 como aprendizaje continuo
+        save_to_db("documentos", {
+            "file_name": f"Chat_{re.sub(r'[^a-zA-Z0-9]', '_', query[:15])}.txt",
+            "content": f"Interacción y aprendizaje de usuario: {query}"
+        })
+        return f"He registrado tu instrucción ('{query}') y se ha sincronizado en la base de conocimientos del Canvas 3.", ""
 
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
