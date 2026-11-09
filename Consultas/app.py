@@ -93,7 +93,7 @@ TOOLS = [
 
 # --- LÓGICA DE GESTIÓN DEL CHAT CON S.I.N.D.D.I. ---
 
-@app.route('/chat', methods=['POST'])
+@app.route('/api/chat', methods=['POST'])
 def handle_chat():
     user_message = request.json.get('message', '').strip()
     if not user_message:
@@ -165,11 +165,11 @@ def handle_chat():
         print(f"Fallo en el núcleo de S.I.N.D.D.I.: {e}")
         return jsonify({"response": "Error interno al consultar mis circuitos locales.", "code_3d": ""}), 500
 
-@app.route('/upload-pdf', methods=['POST'])
+@app.route('/api/upload', methods=['POST'])
 def handle_pdf():
-    if 'file' not in request.files:
-        return jsonify({"error": "No se detectó ningún archivo"}), 400
-    file = request.files['file']
+    if 'pdf' not in request.files:
+        return jsonify({"error": "No se detectó ningún archivo PDF"}), 400
+    file = request.files['pdf']
     
     try:
         reader = pypdf.PdfReader(file)
@@ -183,4 +183,4 @@ def handle_pdf():
 
 if __name__ == '__main__':
     init_db()
-    app.run(port=5000, debug=True)
+    app.run(port=3000, debug=True)
