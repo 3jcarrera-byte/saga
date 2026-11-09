@@ -16,9 +16,7 @@ body, html {
    ========================================== */
 .ide-container {
     display: grid;
-    /* 3 Columnas principales: Izquierda, Centro, Derecha */
     grid-template-columns: 1fr 1fr 1fr;
-    /* 3 Filas para apilar los paneles verticalmente en cada columna */
     grid-template-rows: 1fr 1fr 1fr;
     height: 100vh;
     gap: 6px;
@@ -50,37 +48,41 @@ body, html {
     text-overflow: ellipsis;
 }
 
-/* ==========================================
-   POSICIONAMIENTO EXACTO SEGÚN TU ORDEN
-   ========================================== */
-/* Columna Izquierda: 1, 2 y 3 de arriba a abajo */
+/* Posicionamiento exacto por columnas y filas */
 #canvas-1 { grid-column: 1; grid-row: 1; }
 #canvas-2 { grid-column: 1; grid-row: 2; }
 #canvas-3 { grid-column: 1; grid-row: 3; }
 
-/* Columna Central: 4 y 5 de arriba a abajo (el 4 puede ocupar 2 filas si se prefiere, o distribuirse equitativamente) */
 #canvas-4 { grid-column: 2; grid-row: 1 / span 2; }
 #canvas-5 { grid-column: 2; grid-row: 3; }
 
-/* Columna Derecha: 6, 7 y 8 de arriba a abajo */
 #canvas-6 { grid-column: 3; grid-row: 1; }
 #canvas-7 { grid-column: 3; grid-row: 2; }
 #canvas-8 { grid-column: 3; grid-row: 3; }
 
 /* ==========================================
-   ESTILOS DE VISORES 3D Y COMPONENTES
+   CONTROLES Y COMPONENTES ESPECÍFICOS
    ========================================== */
-#viewport-canvas-2,
-#viewport-canvas-4,
-#viewport-canvas-7,
-#viewport-3d {
-    width: 100%;
-    height: 100%;
-    background: #000;
-    border-radius: 4px;
-    position: relative;
-    overflow: hidden;
+.panel-toolbar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
 }
+
+.panel-btn {
+    background: #0284c7;
+    border: none;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+}
+.panel-btn:hover { background: #0369a1; }
+.panel-btn.success { background: #10b981; }
+.panel-btn.success:hover { background: #059669; }
 
 .chat-messages {
     flex: 1;
@@ -97,31 +99,16 @@ body, html {
     border-radius: 4px;
     word-break: break-word;
 }
-
-.message.user {
-    background: #1e293b;
-    border-left: 3px solid #38bdf8;
-}
-
-.message.bot, .message.sinddi {
-    background: #334155;
-    border-left: 3px solid #ec4899; /* Tono distintivo para S.I.N.D.D.I. */
-}
-
-.message.system {
-    background: #0f172a;
-    border-left: 3px solid #f59e0b;
-    font-style: italic;
-    font-size: 12px;
-}
+.message.user { background: #1e293b; border-left: 3px solid #38bdf8; }
+.message.bot, .message.sinddi { background: #334155; border-left: 3px solid #ec4899; }
+.message.system { background: #0f172a; border-left: 3px solid #f59e0b; font-style: italic; font-size: 12px; }
 
 .chat-input-area {
     display: flex;
     gap: 6px;
     margin-top: 8px;
 }
-
-.chat-input-area input {
+.chat-input-area textarea, .chat-input-area input {
     flex: 1;
     background: #0f172a;
     border: 1px solid #475569;
@@ -129,12 +116,10 @@ body, html {
     padding: 6px;
     border-radius: 4px;
     outline: none;
+    resize: none;
+    height: 32px;
 }
-
-.chat-input-area input:focus {
-    border-color: #38bdf8;
-}
-
+.chat-input-area textarea:focus, .chat-input-area input:focus { border-color: #38bdf8; }
 .chat-input-area button {
     background: #0284c7;
     border: none;
@@ -143,10 +128,6 @@ body, html {
     border-radius: 4px;
     cursor: pointer;
     font-weight: 600;
-}
-
-.chat-input-area button:hover {
-    background: #0369a1;
 }
 
 #runtime-iframe {
@@ -164,7 +145,12 @@ body, html {
     font-size: 12px;
 }
 
-.success-text {
-    color: #34d399;
-    margin: 0;
+.error-item {
+    background: rgba(239, 68, 68, 0.1);
+    border-left: 3px solid #ef4444;
+    padding: 6px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    cursor: pointer;
 }
+.error-item:hover { background: rgba(239, 68, 68, 0.2); }
