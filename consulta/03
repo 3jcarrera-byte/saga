@@ -1,0 +1,608 @@
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
+import { pipeline } from '@xenova/transformers';
+import fs from 'fs';
+import path from 'path';
+
+const app = express();
+const PORT = 3000;
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+
+// Servir automáticamente los archivos estáticos (index.html, styles.css, app.js) desde la raíz
+app.use(express.static('.'));
+
+// Asegurar directorios locales para almacenamiento persistente y de memoria
+const DB_DIR = './local_brain_db';
+const DB_FILE = path.join(DB_DIR, 'vector_matrix.json');
+const MEMORY_FILE = path.join(DB_DIR, 'memories.json');
+const FAST_BRAIN_FILE = path.join(DB_DIR, 'fast_brain.json');
+
+if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+
+// Inicializar archivos de memoria si no existen
+if (!fs.existsSync(MEMORY_FILE)) {
+    fs.writeFileSync(MEMORY_FILE, JSON.stringify([], null, 2));
+}
+
+if (!fs.existsSync(FAST_BRAIN_FILE)) {
+    fs.writeFileSync(FAST_BRAIN_FILE, JSON.stringify({ patterns: [] }, null, 2));
+}
+
+// Configurar multer para la recepción temporal de archivos PDF
+const upload = multer({ dest: 'uploads/' });
+
+// Inicialización global del pipeline de embeddings local (Xenova/all-MiniLM-L6-v2)
+let embedder = null;
+(async () => {
+    console.log('Cargando el pipeline de embeddings locales (Xenova/all-MiniLM-L6-v2)...');
+    embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    console.log('Modelo de embeddings listo y optimizado.');
+})();
+
+// ==========================================
+// MOTOR DE META-APRENDIZAJE Y MEMORIA RÁPIDA (FAST TRACK)
+// ==========================================
+class FastEvolutionEngine {
+    constructor() {
+        this.memoryPath = FAST_BRAIN_FILE;
+        this.memory = this.loadFastMemory();
+    }
+
+    loadFastMemory() {
+        try {
+            if (fs.existsSync(this.memoryPath)) {
+                return JSON.parse(fs.readFileSync(this.memoryPath, 'utf-8'));
+            }
+        } catch (e) {
+            console.error('Error cargando fast_brain.json:', e);
+        }
+        return { patterns: [] };
+    }
+
+    createSignature(errorText) {
+        return errorText.replace(/:\d+:\d+/g, '').slice(0, 150).trim();
+    }
+
+    queryFastMemory(errorText) {
+        const signature = this.createSignature(errorText);
+        const match = this.memory.patterns.find(p => p.signature === signature);
+        if (match) {
+            match.hits += 1;
+            this.persist();
+            return { fastTrack: true, patch: match.patch };
+        }
+        return { fastTrack: false };
+    }
+
+    learnPattern(errorText, patch) {
+        const signature = this.createSignature(errorText);
+        const existing = this.memory.patterns.find(p => p.signature === signature);
+        
+        if (!existing) {
+            this.memory.patterns.push({
+                signature,
+                patch,
+                hits: 1,
+                learnedAt: new Date().toISOString()
+            });
+            this.persist();
+        }
+    }
+
+    persist() {
+        fs.writeFileSync(this.memoryPath, JSON.stringify(this.memory, null, 2), 'utf-8');
+    }
+}
+
+const brainEngine = new FastEvolutionEngine();
+
+// ==========================================
+// UTILIDADES DE MEMORIA EVOLUTIVA Y RAG
+// ==========================================
+
+function loadMemories() {
+    try {
+        const data = fs.readFileSync(MEMORY_FILE, 'utf-8');
+        return JSON.parse(data);
+    } catch {
+        return [];
+    }
+}
+
+function saveMemories(memories) {
+    fs.writeFileSync(MEMORY_FILE, JSON.stringify(memories, null, 2));
+}
+
+function smartUpsertMemory(concept, details) {
+    const memories = loadMemories();
+    const today = new Date().toISOString().split('T')[0];
+    
+    const existingIndex = memories.findIndex(m => m.concept.toLowerCase() === concept.toLowerCase());
+
+    if (existingIndex !== -1) {
+        if (memories[existingIndex].details.toLowerCase() === details.toLowerCase()) {
+            return { updated: false, message: 'Memoria ya existente idéntica, omitida.' };
+        } else {
+            memories[existingIndex].details = details;
+            memories[existingIndex].lastUpdated = today;
+            memories[existingIndex].version = (memories[existingIndex].version || 1) + 1;
+            saveMemories(memories);
+            return { updated: true, message: 'Memoria actualizada con nuevos detalles.' };
+        }
+    } else {
+        memories.push({
+            id: Date.now(),
+            concept: concept,
+            details: details,
+            dateCreated: today,
+            lastUpdated: today,
+            version: 1
+        });
+        saveMemories(memories);
+        return { updated: true, message: 'Nueva memoria registrada con éxito.' };
+    }
+}
+
+function cosineSimilarity(vecA, vecB) {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
+    }
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function loadVectorStore() {
+    if (!fs.existsSync(DB_FILE)) return [];
+    try {
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+    } catch {
+        return [];
+    }
+}
+
+function saveVectorStore(data) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
+
+async function generateEmbedding(text) {
+    const output = await embedder(text, { pooling: 'mean', normalize: true });
+    return Array.from(output.data);
+}
+
+// ==========================================
+// MOTOR DE RESPALDO LOCAL (SIN OLLAMA)
+// ==========================================
+async function localFallbackReasoning(query, memories, vectorDb, queryVector) {
+    let bestMatch = null;
+    let highestScore = -1;
+
+    for (const mem of memories) {
+        const memText = `${mem.concept}: ${mem.details}`;
+        const memVector = await generateEmbedding(memText);
+        const score = cosineSimilarity(queryVector, memVector);
+        
+        if (score > highestScore) {
+            highestScore = score;
+            bestMatch = mem;
+        }
+    }
+
+    if (bestMatch && highestScore > 0.35) {
+        let responseText = `🧠 [Modo Respaldo Local Autónomo - Ollama Inactivo]\n\n`;
+        responseText += `He recuperado este conocimiento de mi memoria evolutiva (Confianza: ${(highestScore * 100).toFixed(1)}%):\n\n`;
+        responseText += `🔹 **Concepto:** ${bestMatch.concept}\n`;
+        responseText += `📖 **Detalles:** ${bestMatch.details}\n\n`;
+        responseText += `*Nota: El sistema local mantiene el editor sincronizado con tu archivo activo a través de window.currentFile.*`;
+        return responseText;
+    }
+
+    return `⚠️ [Modo Respaldo Local]: Ollama está desconectado y no encontré un concepto lo suficientemente similar en las memorias locales para responder a: "${query}". Prueba encendiendo Ollama o subiendo un PDF con este conocimiento.`;
+}
+
+// ==========================================
+// ENDPOINT DE GESTIÓN DE MEMORIAS (CRUD)
+// ==========================================
+app.get('/api/memories', (req, res) => {
+    res.json(loadMemories());
+});
+
+app.post('/api/memories', (req, res) => {
+    const { concept, details } = req.body;
+    if (!concept || !details) return res.status(400).json({ error: 'Concepto y detalles son obligatorios.' });
+    const result = smartUpsertMemory(concept, details);
+    res.json({ success: true, ...result });
+});
+
+// ==========================================
+// ENDPOINT DE APRENDIZAJE AUTÓNOMO DE ERRORES (RUNTIME)
+// ==========================================
+app.post('/api/learn-from-error', async (req, res) => {
+    try {
+        const { error, file, code } = req.body;
+        if (!error) return res.status(400).json({ error: 'Falta el mensaje de error.' });
+
+        const errorTypeMatch = error.match(/([a-zA-Z]+Error|SyntaxError|TypeError|ReferenceError)/);
+        const errorKey = errorTypeMatch ? errorTypeMatch[1] : 'Error de Ejecución';
+        
+        const conceptName = `Fallo de Runtime: ${errorKey} en ${file || 'código'}`;
+        const errorDetails = `El código generó el error: "${error}". Archivo afectado: ${file}. Se recomienda revisar declaraciones de variables, dependencias o lógica.`;
+
+        const result = smartUpsertMemory(conceptName, errorDetails);
+
+        return res.json({
+            success: true,
+            message: `Registrado en memoria evolutiva (${result.message})`,
+            concept: conceptName
+        });
+    } catch (err) {
+        console.error('Error procesando aprendizaje de error:', err);
+        return res.status(500).json({ error: 'Fallo al registrar el error.' });
+    }
+});
+
+// ==========================================
+// ENDPOINT DE AUTO-CORRECCIÓN VELOZ (FAST-TRACK & MEMORY)
+// ==========================================
+app.post('/api/auto-fix', async (req, res) => {
+    try {
+        const { error, file, code } = req.body;
+        if (!error || !code) return res.status(400).json({ error: 'Faltan datos para la auto-corrección.' });
+
+        const fastCheck = brainEngine.queryFastMemory(error);
+        if (fastCheck.fastTrack) {
+            return res.json({
+                success: true,
+                fixedCode: fastCheck.patch,
+                message: '⚡ Auto-reparado instantáneamente mediante Memoria Rápida.'
+            });
+        }
+
+        const memories = loadMemories();
+        const errorTypeMatch = error.match(/([a-zA-Z]+Error|SyntaxError|TypeError|ReferenceError)/);
+        const errorKey = errorTypeMatch ? errorTypeMatch[1] : '';
+
+        const matchedMemory = memories.find(m => 
+            m.concept.toLowerCase().includes(errorKey.toLowerCase()) || 
+            (file && m.details.toLowerCase().includes(file.toLowerCase()))
+        );
+
+        let fixedCode = code;
+        let fixExplanation = '';
+
+        if (error.includes('is not defined') && error.includes('THREE')) {
+            fixExplanation = 'Se detectó un objeto de Three.js no definido. Añadiendo importación correcta.';
+            if (!code.includes('import * as THREE')) {
+                fixedCode = `import * as THREE from 'three';\n` + code;
+            }
+        } else if (matchedMemory) {
+            fixExplanation = `Aplicando solución basada en memoria evolutiva: "${matchedMemory.concept}"`;
+            fixedCode = `// [Auto-reparado por Memoria Evolutiva]: ${matchedMemory.concept}\n` + code;
+        } else {
+            fixExplanation = 'El error fue registrado en la base de conocimiento local.';
+        }
+
+        brainEngine.learnPattern(error, fixedCode);
+
+        return res.json({
+            success: true,
+            fixedCode: fixedCode,
+            message: fixExplanation
+        });
+
+    } catch (err) {
+        console.error('Error en el proceso de auto-corrección:', err);
+        return res.status(500).json({ error: 'Fallo al procesar la auto-reparación.' });
+    }
+});
+
+// ==========================================
+// 1. ENDPOINT DE SUBIDA E INGESTIÓN DE PDF
+// ==========================================
+app.post('/api/upload', upload.single('pdf'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No se adjuntó ningún archivo PDF.' });
+
+        const dataBuffer = fs.readFileSync(req.file.path);
+        const parsedData = await pdfParse(dataBuffer);
+        const rawText = parsedData.text;
+
+        fs.unlinkSync(req.file.path);
+
+        const chunkSize = 500;
+        const overlap = 100;
+        const chunks = [];
+        
+        let start = 0;
+        while (start < rawText.length) {
+            const chunk = rawText.slice(start, start + chunkSize).replace(/\s+/g, ' ').trim();
+            if (chunk.length > 20) chunks.push(chunk);
+            start += chunkSize - overlap;
+        }
+
+        const dbEntries = [];
+        let extractedMemoriesCount = 0;
+
+        for (let i = 0; i < chunks.length; i++) {
+            const textChunk = chunks[i];
+            const vector = await generateEmbedding(textChunk);
+            
+            dbEntries.push({
+                id: `${Date.now()}_${i}`,
+                text: textChunk,
+                vector: vector,
+                source: req.file.originalname
+            });
+
+            const lines = textChunk.split('.');
+            for (const line of lines) {
+                const cleanLine = line.trim();
+                if (
+                    cleanLine.toLowerCase().includes(' es ') || 
+                    cleanLine.toLowerCase().includes(' se define ') || 
+                    cleanLine.toLowerCase().includes(' regla ') ||
+                    cleanLine.toLowerCase().includes(' consiste en ')
+                ) {
+                    const parts = cleanLine.split(/ es | se define | consiste en /i);
+                    if (parts.length >= 2 && parts[0].length < 40 && parts[1].length > 10) {
+                        const conceptCandidate = parts[0].replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s]/g, '').trim();
+                        const detailsCandidate = parts[1].trim();
+
+                        if (conceptCandidate.length > 3) {
+                            smartUpsertMemory(conceptCandidate, `[Extraído de ${req.file.originalname}]: ${detailsCandidate}`);
+                            extractedMemoriesCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        const currentDb = loadVectorStore();
+        saveVectorStore([...currentDb, ...dbEntries]);
+
+        return res.json({ 
+            success: true, 
+            chunks: dbEntries.length, 
+            memoriesExtracted: extractedMemoriesCount,
+            message: `PDF indexado y ${extractedMemoriesCount} conceptos asimilados en la memoria evolutiva.` 
+        });
+
+    } catch (error) {
+        console.error('Error procesando el PDF:', error);
+        return res.status(500).json({ error: 'Fallo al procesar e indexar el documento.' });
+    }
+});
+
+// ==========================================
+// 2. ENDPOINT DE CHAT Y APRENDIZAJE AUTOMÁTICO (CON TIMEOUT OPTIMIZADO)
+// ==========================================
+app.post('/api/chat', async (req, res) => {
+    try {
+        const { query } = req.body;
+        if (!query) return res.status(400).json({ error: 'La consulta es obligatoria.' });
+
+        const memories = loadMemories();
+        const memoryContext = memories.map(m => `- [${m.lastUpdated}] Concepto: ${m.concept} | Detalles: ${m.details}`).join('\n');
+
+        const queryVector = await generateEmbedding(query);
+        const db = loadVectorStore();
+        let pdfContext = '';
+
+        if (db.length > 0) {
+            const ranked = db.map(entry => ({
+                text: entry.text,
+                score: cosineSimilarity(queryVector, entry.vector)
+            })).sort((a, b) => b.score - a.score);
+
+            pdfContext = ranked.slice(0, 3).map(item => item.text).join('\n---\n');
+        }
+
+        const systemPrompt = `Eres el cerebro autónomo, orquestador y director técnico del IDE "Cyber-Studio".
+[MEMORIAS DE LARGO PLAZO APRENDIDAS]:
+${memoryContext || 'Aún no hay memorias registradas.'}
+
+[CONTEXTO PDF ADICIONAL]:
+${pdfContext || 'No hay documentos PDF activos.'}
+
+INSTRUCCIONES CLAVE:
+1. APRENDIZAJE: Si aprendes un hecho nuevo, emite un bloque JSON al final:
+\`\`\`json:memory
+{
+  "concept": "Nombre corto",
+  "details": "Explicación detallada"
+}
+\`\`\``;
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        let ollamaAvailable = true;
+        let ollamaResponse;
+
+        try {
+            // Control de tiempo de 2 segundos para evitar bloqueos si Ollama está cargando
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+            ollamaResponse = await fetch('http://localhost:11434/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'llama3',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: query }
+                    ],
+                    stream: true
+                }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+            if (!ollamaResponse.ok) ollamaAvailable = false;
+        } catch (err) {
+            ollamaAvailable = false;
+        }
+
+        if (!ollamaAvailable) {
+            console.log('⚠️ Ollama no disponible o tardando demasiado. Ejecutando motor de respaldo local...');
+            const fallbackAnswer = await localFallbackReasoning(query, memories, db, queryVector);
+            res.write(fallbackAnswer);
+            res.end();
+            return;
+        }
+
+        const reader = ollamaResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            const chunkStr = decoder.decode(value, { stream: true });
+            const lines = chunkStr.split('\n');
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.message && parsed.message.content) {
+                        const contentPiece = parsed.message.content;
+                        fullResponse += contentPiece;
+                        res.write(contentPiece);
+                    }
+                } catch (e) {}
+            }
+        }
+
+        const memoryMatch = fullResponse.match(/```json:memory([\s\S]*?)```/);
+        if (memoryMatch && memoryMatch[1]) {
+            try {
+                const memObj = JSON.parse(memoryMatch[1].trim());
+                if (memObj.concept && memObj.details) {
+                    smartUpsertMemory(memObj.concept, memObj.details);
+                    console.log(`[MEMORIA EVOLUTIVA GUARDADA]: ${memObj.concept}`);
+                }
+            } catch (err) {}
+        }
+
+        res.end();
+
+    } catch (error) {
+        console.error('Error en el chat:', error);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'No se pudo conectar con Ollama.' });
+        } else {
+            res.end('\n[Error de transmisión]');
+        }
+    }
+});
+
+// ==========================================
+// 3. ENDPOINT DE ANÁLISIS DE CÓDIGO
+// ==========================================
+app.post('/api/analyze-code', async (req, res) => {
+    try {
+        const { files } = req.body;
+        if (!files || !files.length) return res.status(400).json({ error: 'No hay archivos.' });
+
+        const codeContext = files.map(f => `=== FILE: ${f.filename} ===\n${f.content}`).join('\n\n');
+        const systemPrompt = `Eres un auditor experto de código estático y arquitectura de software. Analiza errores y dependencias.`;
+
+        const ollamaResponse = await fetch('http://localhost:11434/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: 'llama3',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: codeContext }
+                ],
+                stream: true
+            })
+        });
+
+        if (!ollamaResponse.ok) throw new Error('Error en Ollama');
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        const reader = ollamaResponse.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const chunkStr = decoder.decode(value, { stream: true });
+            const lines = chunkStr.split('\n');
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.message?.content) res.write(parsed.message.content);
+                } catch (e) {}
+            }
+        }
+        res.end();
+    } catch (error) {
+        res.status(500).json({ error: 'Fallo al analizar código.' });
+    }
+});
+
+// ==========================================
+// 4. ENDPOINT PARA GUARDAR ARCHIVOS EN EL DISCO LOCAL
+// ==========================================
+app.post('/api/save-project', (req, res) => {
+    try {
+        const { files } = req.body;
+        if (!files || !Array.isArray(files) || files.length === 0) {
+            return res.status(400).json({ error: 'No se proporcionaron archivos válidos para guardar.' });
+        }
+
+        const PROJECT_ROOT = path.join('./local_brain_db', 'saved_project');
+        if (!fs.existsSync(PROJECT_ROOT)) {
+            fs.mkdirSync(PROJECT_ROOT, { recursive: true });
+        }
+
+        let savedCount = 0;
+
+        for (const file of files) {
+            if (!file.filename || typeof file.content !== 'string') continue;
+
+            const safePath = path.normalize(file.filename).replace(/^(\.\.[\/\\])+/, '');
+            const absoluteFilePath = path.join(PROJECT_ROOT, safePath);
+            const fileDir = path.dirname(absoluteFilePath);
+
+            if (!fs.existsSync(fileDir)) {
+                fs.mkdirSync(fileDir, { recursive: true });
+            }
+
+            fs.writeFileSync(absoluteFilePath, file.content, 'utf-8');
+            savedCount++;
+        }
+
+        return res.json({ 
+            success: true, 
+            message: `Se guardaron ${savedCount} archivos exitosamente en la carpeta local.`,
+            path: path.resolve(PROJECT_ROOT)
+        });
+
+    } catch (error) {
+        console.error('Error al guardar el proyecto en el disco:', error);
+        return res.status(500).json({ error: 'Fallo al escribir los archivos en el disco local.' });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Servidor de Memoria Evolutiva y Orquestación ejecutándose en http://localhost:${PORT}`);
+});
