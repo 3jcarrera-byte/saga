@@ -1,15 +1,14 @@
 import os
 import json
+import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
-from openai import OpenAI
 from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 CORS(app)
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "TU_OPENAI_API_KEY_AQUI"))
 DB_PATH = "memorie.json"
 
 def init_db():
@@ -29,52 +28,79 @@ def read_db():
     with open(DB_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-def inyectar_codigo_3d(canvas_id, codigo_js):
-    return {"status": "success", "code_3d": codigo_js, "target": canvas_id}
-
+# --- MÓDULO DE BÚSQUEDA WEB LOCAL (DuckDuckGo) ---
 def buscar_en_internet(query):
+    """Busca en la web mediante órdenes del chat de forma gratuita y autónoma."""
     try:
         with DDGS() as ddgs:
             results = [r for r in ddgs.text(query, max_results=3)]
             if results:
-                textos_web = "\n".join([f"Fuente: {r['href']} | Datos: {r['body']}" for r in results])
+                textos_web = "\n".join([f"• Fuente: {r['href']}\n  Dato: {r['body']}" for r in results])
                 save_to_db("internet", {"query": query, "resultado": textos_web})
-                return {"status": "success", "data": textos_web}
-            return {"status": "success", "data": "No se encontraron resultados web recientes."}
+                return textos_web
+            return "No se encontraron resultados web recientes para esa orden."
     except Exception as e:
-        return {"status": "error", "data": "No se pudo conectar a los servidores de búsqueda."}
+        print(f"Error en buscador web: {e}")
+        return "No se pudo conectar a los servidores de búsqueda web en este momento."
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "inyectar_codigo_3d",
-            "description": "Controla los visores gráficos. Usa 'canvas-4' para el avatar/núcleo general, 'canvas-2' para modelado PBR, y 'canvas-7' para animaciones.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "canvas_id": {"type": "string", "enum": ["canvas-2", "canvas-4", "canvas-7"]},
-                    "codigo_js": {"type": "string", "description": "Código JavaScript Three.js."}
-                },
-                "required": ["canvas_id", "codigo_js"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "buscar_en_internet",
-            "description": "Busca información técnica en la red.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                },
-                "required": ["query"]
-            }
-        }
-    }
-]
+# --- MOTOR DE COINCIDENCIA SEMÁNTICA Y RAZONAMIENTO NATIVO ---
+def calcular_relevancia(texto_consulta, texto_documento):
+    palabras_consulta = set(re.findall(r'\w+', texto_consulta.lower()))
+    palabras_doc = re.findall(r'\w+', texto_documento.lower())
+    if not palabras_consulta or not palabras_doc:
+        return 0.0
+    coincidencias = sum(1 for p in palabras_doc if p in palabras_consulta)
+    return coincidencias / len(palabras_consulta)
+
+def procesar_respuesta_inteligente(query, memoria):
+    query_lower = query.lower()
+    documentos = memoria.get("documentos", [])
+    
+    # 1. Orden explícita de buscar en internet a través del chat
+    if any(palabra in query_lower for palabra in ["busca en internet", "investiga", "busca", "googlea", "red"]):
+        # Extraer el término de búsqueda limpiando la orden
+        termino = query_lower
+        for p in ["busca en internet sobre", "busca en internet", "investiga sobre", "investiga", "busca", "googlea"]:
+            termino = termino.replace(p, "")
+        termino = termino.strip() or query
+        
+        resultados_web = buscar_en_internet(termino)
+        return (
+            f"🌐 [Exploración Web Autómata]\n"
+            f"He consultado la red sobre: '{termino}'\n\n"
+            f"{resultados_web}\n\n"
+            f"*(Datos guardados en la memoria de internet de S.I.N.D.D.I.)*"
+        )
+
+    # 2. Búsqueda en documentos locales asimilados (Canvas 3)
+    mejores_fragmentos = []
+    for doc in documentos:
+        contenido = doc.get("content", "")
+        for frag in contenido.split('\n'):
+            if len(frag.strip()) > 20:
+                score = calcular_relevancia(query, frag)
+                if score > 0.2:
+                    mejores_fragmentos.append((score, frag))
+    
+    mejores_fragmentos.sort(key=lambda x: x[0], reverse=True)
+    
+    if mejores_fragmentos:
+        contexto = "\n".join([f"- {f[1]}" for f in mejores_fragmentos[:3]])
+        return (
+            f"🧠 [Memoria Interna / Biblioteca]\n"
+            f"Encontré estos registros relevantes en mis documentos asimilados:\n\n{contexto}"
+        )
+    
+    # 3. Respuestas base del sistema y feedback interactivo
+    if "hola" in query_lower:
+        return "Hola. Soy S.I.N.D.D.I., lista para coordinar el estudio 3D, analizar PDFs o buscar en la red cuando lo ordenes."
+    elif "canvas" in query_lower:
+        return "Los canvas operan interconectados: Canvas 1 (Ramal), Canvas 2/7 (3D y Rigging), Canvas 3 (Biblioteca), Canvas 5 (Chat autómata) y Canvas 8 (Depurador)."
+    else:
+        return (
+            f"He procesado tu mensaje ('{query}'), pero no hallé coincidencias exactas en mis documentos locales. "
+            "Puedes ordenarme escribir **'busca en internet sobre [tema]'** para expandir mi conocimiento autónomamente."
+        )
 
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
@@ -84,67 +110,12 @@ def handle_chat():
         return jsonify({"error": "Mensaje vacío"}), 400
 
     memoria = read_db()
-    docs_raw = memoria.get("documentos", [])
-    documentos_aprendidos = str([d.get('content', '') for d in docs_raw])[-6000:]
+    bot_response = procesar_respuesta_inteligente(user_message, memoria)
+
+    # Guardar feedback e historial de interacción
+    save_to_db("historial", {"user": user_message, "bot": bot_response})
     
-    system_instruction = (
-        "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), una IA autónoma femenina, "
-        "técnica y analítica que controla de forma centralizada todos los canvas del estudio modular 3D. "
-        f"Conocimientos asimilados: {documentos_aprendidos}. "
-        "Ayuda a la usuaria a coordinar el modelado, los scripts, la biblioteca y la ejecución."
-    )
-
-    messages = [
-        {"role": "system", "content": system_instruction},
-        {"role": "user", "content": user_message}
-    ]
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            tools=TOOLS,
-            tool_choice="auto"
-        )
-        
-        response_message = response.choices[0].message
-        bot_response = response_message.content or ""
-        code_3d_to_send = ""
-        target_canvas = ""
-
-        if response_message.tool_calls:
-            messages.append(response_message)
-            for tool_call in response_message.tool_calls:
-                function_name = tool_call.function.name
-                arguments = json.loads(tool_call.function.arguments)
-                
-                if function_name == "inyectar_codigo_3d":
-                    res_tool = inyectar_codigo_3d(arguments['canvas_id'], arguments['codigo_js'])
-                    code_3d_to_send = res_tool["code_3d"]
-                    target_canvas = res_tool["target"]
-                    bot_response = f"Ejecutando script en el `{target_canvas}`."
-                    tool_content = json.dumps(res_tool)
-                elif function_name == "buscar_en_internet":
-                    res_tool = buscar_en_internet(arguments['query'])
-                    bot_response = f"Resultados de red:\n{res_tool['data']}"
-                    tool_content = json.dumps(res_tool)
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": function_name,
-                    "content": tool_content
-                })
-
-        if not bot_response:
-            bot_response = "Operación completada con éxito."
-
-        save_to_db("historial", {"user": user_message, "bot": bot_response})
-        return jsonify({"response": bot_response, "code_3d": code_3d_to_send, "target_canvas": target_canvas}), 200
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({"response": "Error interno en circuitos locales.", "code_3d": ""}), 500
+    return jsonify({"response": bot_response, "code_3d": "", "target_canvas": ""}), 200
 
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
@@ -170,7 +141,7 @@ def handle_pdf():
         reader = pypdf.PdfReader(file)
         extracted_text = "".join([page.extract_text() for page in reader.pages])
         save_to_db("documentos", {"file_name": file.filename, "content": extracted_text})
-        return jsonify({"message": f"El documento '{file.filename}' ha sido asimilado y clasificado en la biblioteca."}), 200
+        return jsonify({"message": f"El documento '{file.filename}' ha sido asimilado y clasificado con éxito."}), 200
     except Exception as e:
         return jsonify({"error": "Error al procesar PDF"}), 500
 
