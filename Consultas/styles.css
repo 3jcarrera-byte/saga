@@ -1,0 +1,179 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+body {
+    background-color: #09090b;
+    color: #ffffff;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Cuadrícula Base de 9 Porciones Iguales */
+#grid-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 100vw;
+    height: 100vh;
+    gap: 8px;
+    padding: 8px;
+}
+
+/* Los 7 entornos que sí son Canvas 3D */
+.canvas-3d {
+    background-color: #111115;
+    border: 1px solid #1f1f29;
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+}
+
+.canvas-3d canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.canvas-3d::after {
+    content: attr(data-label);
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    font-size: 0.7rem;
+    color: #4a4a5e;
+    z-index: 10;
+    pointer-events: none;
+}
+
+/* CANVAS 5: Configuración del Chat Gigante Fusionado */
+.main-giant {
+    grid-column: 2;
+    grid-row: 2 / span 2; /* Ocupa el centro y el espacio de abajo */
+    background-color: #141419;
+    border: 1px solid #00ffcc33;
+    border-radius: 6px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: inset 0 0 20px rgba(0, 255, 204, 0.02);
+    min-height: 0; /* CORRECCIÓN: Evita que el contenedor colapse y rompa el Grid */
+}
+
+.chat-header h3 {
+    font-size: 0.95rem;
+    color: #00ffcc;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#chat-messages {
+    flex-grow: 1;
+    background-color: #09090b;
+    border: 1px solid #22222b;
+    border-radius: 4px;
+    padding: 12px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0; /* CORRECCIÓN: Permite scroll correcto en textos masivos */
+}
+
+.chat-controls {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+input[type="text"] {
+    flex-grow: 1;
+    background-color: #1a1a22;
+    border: 1px solid #2d2d3d;
+    color: white;
+    padding: 10px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+input[type="text"]:focus {
+    border-color: #00ffcc;
+}
+
+button {
+    background-color: #00ffcc;
+    color: #09090b;
+    border: none;
+    padding: 10px 20px;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+button:hover { 
+    background-color: #00cca3; 
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+.btn-secondary {
+    background-color: #22222b;
+    color: #ffffff;
+    border: 1px solid #333344;
+    flex: 1; /* Distribuye espacio equitativo en botones de archivos */
+}
+
+.btn-secondary:hover { 
+    background-color: #2d2d3a; 
+}
+
+/* Estructuración Avanzada de Mensajes para Evitar Desbordes */
+.message { 
+    line-height: 1.4;
+    word-break: break-word; /* CORRECCIÓN: Evita que enlaces largos o códigos de la IA rompan la vista */
+    padding: 6px 10px;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.message.user { 
+    color: #4da6ff; 
+    border-left: 3px solid #4da6ff;
+}
+
+.message.bot { 
+    color: #00ff88; 
+    border-left: 3px solid #00ff88;
+    background-color: rgba(0, 255, 136, 0.01);
+}
+
+.message.system { 
+    color: #ffaa00; 
+    font-style: italic; 
+    border-left: 3px solid #ffaa00;
+}
+
+/* Personalización del Scrollbar para estilo tecnológico */
+#chat-messages::-webkit-scrollbar {
+    width: 6px;
+}
+#chat-messages::-webkit-scrollbar-track {
+    background: #09090b;
+}
+#chat-messages::-webkit-scrollbar-thumb {
+    background: #22222b;
+    border-radius: 3px;
+}
+#chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #00ffcc44;
+}
