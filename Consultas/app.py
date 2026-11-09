@@ -4,7 +4,7 @@ import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 app = Flask(__name__)
 CORS(app)
@@ -29,6 +29,18 @@ def save_to_db(key, entry):
 def read_db():
     with open(DB_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+# --- NÚCLEO DE ACCIÓN FÍSICA Y CREACIÓN DE ARCHIVOS ---
+def crear_archivo_local(nombre_archivo, contenido):
+    """Crea un archivo real en la carpeta madre del proyecto."""
+    try:
+        nombre_limpio = os.path.basename(nombre_archivo)
+        with open(nombre_limpio, 'w', encoding='utf-8') as f:
+            f.write(contenido)
+        save_to_db("historial", {"evento": "Creación de archivo físico", "archivo": nombre_limpio, "estado": "Éxito"})
+        return f"📁 Archivo '{nombre_limpio}' creado exitosamente en la carpeta madre."
+    except Exception as e:
+        return f"Error al crear el archivo físico: {str(e)}"
 
 # --- NÚCLEO DE AUTO-MODIFICACIÓN Y PERMISOS DE CÓDIGO ---
 def modificar_archivo_proyecto(nombre_archivo, nuevo_contenido):
@@ -79,15 +91,34 @@ def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
     documentos = memoria.get("documentos", [])
     
-    # 1. Orden de auto-modificación o programación directa desde el chat
+    # 1. ORDEN DE CREACIÓN DE ARCHIVOS FÍSICOS (ej. "agrega en la carpeta madre un archivo tipo .txt que diga...")
+    if "agrega en la carpeta madre" in query_lower or "crea un archivo" in query_lower or "archivo" in query_lower and "diga" in query_lower:
+        match_texto = re.search(r'diga:\s*["\']([^"\']+)["\']', query) or re.search(r'que diga\s+(.+)', query, re.IGNORECASE)
+        contenido_txt = match_texto.group(1).strip() if match_texto else "LO LOGRÉ"
+        
+        match_nombre = re.search(r'archivo\s+(?:tipo\s+)?([a-zA-Z0-9_\-]+\.txt)', query_lower)
+        nombre_txt = match_nombre.group(1) if match_nombre else "logro.txt"
+        
+        resultado_creacion = crear_archivo_local(nombre_txt, contenido_txt)
+        return f"🛠️ [Acción Ejecutada por S.I.N.D.D.I.]\n{resultado_creacion}\nContenido inyectado: '{contenido_txt}'"
+
+    # 2. ORDEN 3D (ej. "dibuja una esfera azul en el canvas 2")
+    if "dibuja" in query_lower or "esfera" in query_lower or "canvas 2" in query_lower:
+        codigo_3d = "const geometry = new THREE.SphereGeometry(1, 32, 32);\nconst material = new THREE.MeshBasicMaterial({color: 0x0000ff});\nconst sphere = new THREE.Mesh(geometry, material);\nscene.add(sphere);"
+        return (
+            f"🎨 [Motor 3D - Canvas 2 Activado]\n"
+            f"Geometría procesada y lista para renderizado en pantalla:\n\n"
+            f"```javascript\n{codigo_3d}\n```"
+        )
+
+    # 3. Orden de auto-modificación de código
     if "modifica el archivo" in query_lower or "actualiza el codigo" in query_lower or "reescribe" in query_lower:
         return (
             "🛠️ [Permiso de Modificación Activo]\n"
-            "Para que pueda reescribir o actualizar un archivo (ej. `styles.css`, `index.html`, `chat.js`), "
-            "indícame el nombre exacto del archivo y el bloque de código completo que deseas que aplique en él."
+            "Indícame el nombre exacto del archivo (`styles.css`, `index.html`, etc.) y el bloque de código completo que deseas aplicar."
         )
 
-    # 2. Orden de búsqueda en internet
+    # 4. Orden de búsqueda en internet
     if query_lower.startswith("busca en internet") or query_lower.startswith("investiga sobre"):
         termino = query_lower
         for p in ["busca en internet sobre", "busca en internet", "investiga sobre", "investiga"]:
@@ -96,7 +127,7 @@ def procesar_respuesta_autonoma(query, memoria):
         resultados_web = buscar_en_internet(termino)
         return f"🌐 [Exploración Web Autómata]\nResultados para '{termino}':\n\n{resultados_web}"
 
-    # 3. Búsqueda en memoria local de documentos (Canvas 3)
+    # 5. Búsqueda en memoria local de documentos (Canvas 3)
     mejores_fragmentos = []
     for doc in documentos:
         contenido = doc.get("content", "")
@@ -117,11 +148,11 @@ def procesar_respuesta_autonoma(query, memoria):
         )
     
     if "hola" in query_lower:
-        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo. Tengo permisos para modificar mis códigos, aprender de tus documentos y auto-corregirme."
+        return "Hola. Soy S.I.N.D.D.I., tu sistema autónomo local. Tengo permisos para crear archivos, gestionar 3D, buscar en la red y modificar códigos."
     else:
         return (
-            f"He registrado tu instrucción ('{query}'). Si necesitas que modifique la estructura visual, "
-            "los estilos o la lógica de los canvas, ordénamelo y procederé a reescribir el archivo correspondiente."
+            f"He registrado tu instrucción ('{query}'). Especifica si deseas crear un archivo físico, "
+            "ejecutar un comando 3D, buscar en la red o modificar componentes de código."
         )
 
 @app.route('/api/chat', methods=['POST'])
@@ -132,7 +163,6 @@ def handle_chat():
         return jsonify({"error": "Mensaje vacío"}), 400
 
     memoria = read_db()
-    # Llamada corregida y unificada con el nombre exacto de la función
     bot_response = procesar_respuesta_autonoma(user_message, memoria)
 
     save_to_db("historial", {"user": user_message, "bot": bot_response})
