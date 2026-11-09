@@ -36,7 +36,6 @@ def modificar_archivo_proyecto(nombre_archivo, nuevo_contenido):
     Permite a S.I.N.D.D.I. modificar, actualizar o corregir sus propios archivos de código 
     (index.html, styles.css, chat.js, canvas3d.js) para evolucionar su interfaz o corregir errores.
     """
-    # Seguridad básica: solo permitir modificar archivos del directorio de trabajo local
     archivos_permitidos = ["index.html", "styles.css", "chat.js", "canvas3d.js", "app.py"]
     if nombre_archivo not in archivos_permitidos:
         return {"status": "error", "mensaje": "Acceso denegado: Archivo protegido o no autorizado."}
@@ -45,7 +44,6 @@ def modificar_archivo_proyecto(nombre_archivo, nuevo_contenido):
         with open(nombre_archivo, 'w', encoding='utf-8') as f:
             f.write(nuevo_contenido)
         
-        # Registrar la auto-modificación en la memoria evolutiva
         save_to_db("historial", {
             "evento": "Auto-modificación de código",
             "archivo": nombre_archivo,
@@ -111,7 +109,7 @@ def procesar_respuesta_autonoma(query, memoria):
     mejores_fragmentos.sort(key=lambda x: x[0], reverse=True)
     
     if mejores_fragmentos or any(w in query_lower for w in ["redacta", "correo", "presupuesto", "informe", "carta"]):
-        contexto = "\n".join([f"- {f[1]}" for f in melhores_fragmentos[:4]]) if mejores_fragmentos else "Protocolo corporativo formal aplicado."
+        contexto = "\n".join([f"- {f[1]}" for f in mejores_fragmentos[:4]]) if mejores_fragmentos else "Protocolo corporativo formal aplicado."
         return (
             f"🧠 [Motor de Razonamiento - S.I.N.D.D.I.]\n"
             f"Basado en mis registros asimilados:\n\n{contexto}\n\n"
@@ -142,7 +140,7 @@ def handle_chat():
 @app.route('/api/code-patch', methods=['POST'])
 def handle_code_patch():
     """Endpoint dedicado para que la interfaz o la IA apliquen modificaciones de código en caliente."""
-    data = req_data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True) or {}
     filename = data.get('filename')
     content = data.get('content')
     
