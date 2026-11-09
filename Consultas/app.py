@@ -43,7 +43,7 @@ def buscar_en_internet(query):
         with DDGS() as ddgs:
             results = [r for r in ddgs.text(query, max_results=3)]
             if results:
-                textos_web = "\n".join([f"Fuente: {r['href']} - Datos: {r['body']}" for r in results])
+                textos_web = "\n".join([f"Fuente: {r['href']} | Datos: {r['body']}" for r in results])
                 save_to_db("internet", {"query": query, "resultado": textos_web})
                 return {"status": "success", "data": textos_web}
             return {"status": "success", "data": "No se encontraron resultados web recientes."}
@@ -57,18 +57,18 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "inyectar_codigo_3d",
-            "description": "Dibuja figuras, luces o animaciones 3D usando Three.js en uno de los 7 canvas disponibles (canvas-1, canvas-2, canvas-3, canvas-4, canvas-6, canvas-7, canvas-8). El canvas-5 NO existe para 3D ya que es el panel del chat.",
+            "description": "Dibuja figuras, luces o animaciones 3D usando Three.js en el Canvas 4 (entorno 3D principal y avatar de S.I.N.D.D.I.).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "canvas_id": {
                         "type": "string",
-                        "enum": ["canvas-1", "canvas-2", "canvas-3", "canvas-4", "canvas-6", "canvas-7", "canvas-8"],
-                        "description": "El ID exacto del canvas donde se añadirá el objeto."
+                        "enum": ["canvas-4"],
+                        "description": "El ID exacto del canvas donde se añadirá el objeto (Canvas 4 para 3D)."
                     },
                     "codigo_js": {
                         "type": "string",
-                        "description": "Código JavaScript para Three.js. Debe usar 'scenes[canvas_id]' para añadir objetos (ej: scenes['canvas-1'].add(mesh)) y empujar funciones al array 'updateRegistries[canvas_id]' si requiere animación continua."
+                        "description": "Código JavaScript para Three.js."
                     }
                 },
                 "required": ["canvas_id", "codigo_js"]
@@ -79,7 +79,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "buscar_en_internet",
-            "description": "Busca información en la red cuando el usuario pregunte de eventos recientes, datos actuales o conceptos que desconozcas por completo.",
+            "description": "Busca información en la red cuando la usuaria pregunte por eventos recientes o datos externos.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -91,7 +91,7 @@ TOOLS = [
     }
 ]
 
-# --- LÓGICA DE GESTIÓN DEL CHAT CON PROTOCOLO SEGURO ---
+# --- LÓGICA DE GESTIÓN DEL CHAT CON S.I.N.D.D.I. ---
 
 @app.route('/chat', methods=['POST'])
 def handle_chat():
@@ -103,12 +103,12 @@ def handle_chat():
     documentos_aprendidos = str(memoria.get("documentos", []))[-3000:] 
     
     system_instruction = (
-        "Eres el núcleo central de un entorno modular de desarrollo de inteligencia artificial. "
-        "Tienes control sobre 7 visores gráficos 3D (canvas-1 a canvas-8, omitiendo el canvas-5 que es tu caja física de chat). "
-        "Cuentas con acceso directo a memoria persistente local en formato JSON. "
-        f"Conocimientos asimilados de tus PDFs previos: {documentos_aprendidos}. "
-        "Si el usuario pide crear elementos visuales, invoca 'inyectar_codigo_3d'. "
-        "Si te pide datos que no conoces o eventos del presente, invoca obligatoriamente 'buscar_en_internet'."
+        "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), una IA autónoma de identidad femenina, "
+        "altamente técnica, analítica y servicial. Eres la asistente central del entorno modular de desarrollo. "
+        "Cuentas con acceso directo a tu memoria persistente local en formato JSON y a los documentos asimilados en la biblioteca. "
+        f"Conocimientos asimilados de tus documentos: {documentos_aprendidos}. "
+        "Si la usuaria pide crear elementos visuales o renderizar maquetas, invoca 'inyectar_codigo_3d' en el Canvas 4. "
+        "Si te pide datos externos que desconozcas, invoca 'buscar_en_internet'."
     )
 
     messages = [
@@ -138,12 +138,12 @@ def handle_chat():
                 if function_name == "inyectar_codigo_3d":
                     res_tool = inyectar_codigo_3d(arguments['canvas_id'], arguments['codigo_js'])
                     code_3d_to_send = res_tool["code_3d"]
-                    bot_response = f"Ejecutando script de renderizado 3D en tiempo real sobre el `{arguments['canvas_id']}`."
+                    bot_response = f"Ejecutando script de renderizado 3D en el Canvas 4."
                     tool_content = json.dumps(res_tool)
                     
                 elif function_name == "buscar_en_internet":
                     res_tool = buscar_en_internet(arguments['query'])
-                    bot_response = f"He consultado la web sobre '{arguments['query']}'. Aquí están los resultados:\n{res_tool['data']}"
+                    bot_response = f"He consultado la red sobre '{arguments['query']}'. Aquí tienes los datos:\n{res_tool['data']}"
                     tool_content = json.dumps(res_tool)
 
                 messages.append({
@@ -154,14 +154,14 @@ def handle_chat():
                 })
 
         if not bot_response:
-            bot_response = "Procesamiento completado correctamente sin salida de texto."
+            bot_response = "Procesamiento completado correctamente."
 
         save_to_db("historial", {"user": user_message, "bot": bot_response})
         return jsonify({"response": bot_response, "code_3d": code_3d_to_send})
 
     except Exception as e:
-        print(f"Fallo en el bucle del cerebro: {e}")
-        return jsonify({"response": "Error interno al consultar mi cerebro de IA.", "code_3d": ""}), 500
+        print(f"Fallo en el núcleo de S.I.N.D.D.I.: {e}")
+        return jsonify({"response": "Error interno al consultar mis circuitos locales.", "code_3d": ""}), 500
 
 @app.route('/upload-pdf', methods=['POST'])
 def handle_pdf():
@@ -174,7 +174,7 @@ def handle_pdf():
         extracted_text = "".join([page.extract_text() for page in reader.pages])
         
         save_to_db("documentos", {"file_name": file.filename, "content": extracted_text})
-        return jsonify({"response": f"El documento '{file.filename}' ha sido leído y guardado con éxito en mi memoria persistente."})
+        return jsonify({"response": f"El documento '{file.filename}' ha sido leído y guardado con éxito en mi memoria persistente para alimentar la biblioteca del Canvas 3."})
     except Exception as e:
         print(f"Error procesando PDF: {e}")
         return jsonify({"error": "No se pudo extraer el texto del PDF correctamente."}), 500
