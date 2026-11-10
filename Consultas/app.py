@@ -3,6 +3,8 @@ import json
 import re
 import subprocess
 import py_compile
+import time
+import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
@@ -240,6 +242,44 @@ def auto_reparar_codigo_fuente(filepath, error_trace, query_context, llm_engine)
             })
 
 
+# --- HILO CENTINELA EN SEGUNDO PLANO (VIGILANCIA DESATENDIDA) ---
+def background_autonomous_sentinel():
+    print("👁️ S.I.N.D.D.I. Sentinel: Hilo de vigilancia autónoma activado en segundo plano.")
+    time.sleep(15)
+    
+    while True:
+        try:
+            if os.path.exists("app.py"):
+                try:
+                    py_compile.compile("app.py", doraise=True)
+                except Exception as compile_err:
+                    error_msg = str(compile_err)
+                    print(f"⚠️ [Sentinel] Fallo detectado en app.py: {error_msg}. Auto-reparando...")
+                    if llm_brain:
+                        resultado = auto_reparar_codigo_fuente("app.py", error_msg, "Corrección proactiva por Sentinel background.", llm_brain)
+                        print(f"🧬 [Sentinel Resultado]: {resultado}")
+
+            memoria = read_db()
+            errores = memoria.get("errores_registrados", [])
+            for err in errores:
+                if err.get("estado") == "activo":
+                    filepath = err.get("archivo", "app.py")
+                    error_trace = err.get("error", "Error registrado")
+                    if llm_brain:
+                        resultado = auto_reparar_codigo_fuente(filepath, error_trace, "Resolución desatendida vía base de datos.", llm_brain)
+                        print(f"🧬 [Sentinel Resultado]: {resultado}")
+                        err["estado"] = "resuelto"
+                        actualizar_db_completa(memoria)
+        except Exception as e:
+            print(f"⚠️ Error en el ciclo del Sentinel autónomo: {e}")
+        
+        time.sleep(60)
+
+def iniciar_hilo_centinela():
+    t = threading.Thread(target=background_autonomous_sentinel, daemon=True)
+    t.start()
+
+
 # --- CLASIFICACIÓN DE CONOCIMIENTO (CANVAS 3) ---
 def clasificar_y_organizar_memoria(titulo, contenido):
     db = read_db()
@@ -269,12 +309,10 @@ def clasificar_y_organizar_memoria(titulo, contenido):
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
 
-    # Si la orden requiere modelado o diseño 3D, activamos el ciclo autónomo de Blender
     if any(k in query_lower for k in ["blender", "esculpe", "modela", "genera modelo", "crea un 3d", "objeto 3d"]):
         respuesta_blender = ejecutar_script_blender_autonomo(query, llm_brain)
         return respuesta_blender, "", "canvas-4"
 
-    # Búsqueda en la biblioteca local optimizada (Canvas 3)
     biblioteca = memoria.get("biblioteca_optimizada", {})
     palabras_clave = [p for p in query_lower.split() if len(p) > 3]
     coincidencias = []
@@ -288,7 +326,6 @@ def procesar_respuesta_autonoma(query, memoria):
 
     contexto_memoria = "\n---\n".join(coincidencias[:2]) if coincidencias else "Sin registros previos específicos."
 
-    # INFERENCIA NATIVA CON EL CEREBRO GGUF (Qwen2.5-Coder)
     if llm_brain:
         messages = [
             {
@@ -365,7 +402,6 @@ def get_memories():
     return jsonify(formatted), 200
 
 
-# --- NUEVO ENDPOINT PARA CANVAS 8 (AUTO-REPARACIÓN DE CÓDIGO) ---
 @app.route('/api/canvas8/fix-error', methods=['POST'])
 def handle_canvas8_fix():
     req_data = request.get_json(silent=True) or {}
@@ -386,4 +422,6 @@ def handle_canvas8_fix():
 
 if __name__ == '__main__':
     init_db()
+    # Arrancar el hilo centinela de vigilancia desatendida en segundo plano
+    iniciar_hilo_centinela()
     app.run(port=3000, debug=True)
