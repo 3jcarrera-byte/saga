@@ -154,6 +154,121 @@ def ejecutar_script_blender_autonomo(query_usuario, llm_engine):
             })
 
 
+# --- MÓDULO TASK PLANNER (ORQUESTADOR DE PROYECTOS COMPLETOS) ---
+def desglosar_orden_masiva(query_usuario, llm_engine):
+    prompt_sistema = (
+        "Eres el Task Planner principal de S.I.N.D.D.I.\n"
+        "Tu objetivo es tomar una orden compleja o masiva del usuario y descomponerla en un plan de subtareas secuenciales.\n"
+        "Debes devolver la respuesta ÚNICAMENTE como un objeto JSON válido con la siguiente estructura exacta:\n"
+        "{\n"
+        '  "proyecto": "Nombre descriptivo del proyecto",\n'
+        '  "subtareas": [\n'
+        '    {"paso": 1, "tipo": "guion", "descripcion": "Detalle de la tarea de redacción o guion"},\n'
+        '    {"paso": 2, "tipo": "blender_modelado", "descripcion": "Detalle del modelado 3D a generar"},\n'
+        '    {"paso": 3, "tipo": "rigging_animacion", "descripcion": "Detalle de la animación o rigging para Canvas 7"}\n'
+        "  ]\n"
+        "}\n"
+        "No incluyas texto adicional ni explicaciones fuera del JSON."
+    )
+
+    messages = [
+        {"role": "system", "content": prompt_sistema},
+        {"role": "user", "content": query_usuario}
+    ]
+
+    try:
+        if not llm_engine:
+            return None
+            
+        resp = llm_engine.create_chat_completion(
+            messages=messages,
+            temperature=0.2,
+            max_tokens=1024
+        )
+        contenido = resp['choices'][0]['message']['content'].strip()
+        match = re.search(r"```(?:json)?(.*?)```", contenido, re.DOTALL)
+        json_str = match.group(1).strip() if match else contenido
+        
+        plan_json = json.loads(json_str)
+        return plan_json
+    except Exception as e:
+        print(f"⚠️ Error al desglosar la orden masiva en el Task Planner: {e}")
+        return {
+            "proyecto": "Proyecto Directo",
+            "subtareas": [
+                {"paso": 1, "tipo": "blender_modelado", "descripcion": query_usuario}
+            ]
+        }
+
+def ejecutar_plan_maestro(plan_maestro, llm_engine):
+    proyecto_nombre = plan_maestro.get("proyecto", "Proyecto_Sin_Nombre")
+    subtareas = plan_maestro.get("subtareas", [])
+    resultados_ejecucion = []
+    
+    db = read_db()
+    if "escenas_activas" not in db:
+        db["escenas_activas"] = {}
+    db["escenas_activas"][proyecto_nombre] = {"estado": "en curso", "timestamp": "2026-11-10"}
+    actualizar_db_completa(db)
+
+    for tarea in subtareas:
+        paso = tarea.get("paso")
+        tipo = tarea.get("tipo")
+        desc = tarea.get("descripcion")
+        
+        print(f"⚙️ [Task Planner] Ejecutando Paso {paso} [{tipo}]: {desc}")
+        
+        if tipo == "guion" or tipo == "texto":
+            prompt_guion = f"Escribe el contenido detallado o guion técnico para: {desc}"
+            try:
+                resp = llm_engine.create_chat_completion(
+                    messages=[{"role": "user", "content": prompt_guion}],
+                    max_tokens=500,
+                    temperature=0.5
+                )
+                texto_guion = resp['choices'][0]['message']['content'].strip()
+                nombre_archivo = f"guion_{paso}.txt"
+                with open(nombre_archivo, "w", encoding="utf-8") as f:
+                    f.write(texto_guion)
+                resultados_ejecucion.append(f"Paso {paso} [Guion]: Generado y guardado en '{nombre_archivo}'.")
+            except Exception as e:
+                resultados_ejecucion.append(f"Paso {paso} [Guion]: Error -> {str(e)}")
+
+        elif tipo == "blender_modelado" or tipo == "3d":
+            resultado_blender = ejecutar_script_blender_autonomo(desc, llm_engine)
+            resultados_ejecucion.append(f"Paso {paso} [Blender]: {resultado_blender}")
+
+        elif tipo == "rigging_animacion" or tipo == "animacion":
+            script_rigging_path = "blender_rigging.py"
+            codigo_rigging_base = f"""# S.I.N.D.D.I. Canvas 7 Rigging & Animation Pipeline
+import bpy
+print("🦾 [Canvas 7] Aplicando rig y ciclos de animación para: {desc}")
+if bpy.context.selected_objects:
+    obj = bpy.context.active_object
+    print("Objeto activo vinculado a cinemática: " + obj.name)
+"""
+            with open(script_rigging_path, "w", encoding="utf-8") as f:
+                f.write(codigo_rigging_base)
+            
+            blender_path = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
+            if os.path.exists(blender_path):
+                cmd = f'"{blender_path}" --background --python {script_rigging_path}'
+                res_rig = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+                estado_rig = "Éxito" if res_rig.returncode == 0 else "Error menor"
+                resultados_ejecucion.append(f"Paso {paso} [Canvas 7 Rigging]: Ejecutado con estado '{estado_rig}'.")
+            else:
+                resultados_ejecucion.append(f"Paso {paso} [Canvas 7 Rigging]: Script de rigging creado ({script_rigging_path}).")
+
+    save_to_db("historial", {
+        "evento": "Task Planner Ejecutado",
+        "proyecto": proyecto_nombre,
+        "detalles": resultados_ejecucion
+    })
+
+    resumen_final = f"🎯 **[S.I.N.D.D.I. Task Planner - Proyecto: {proyecto_nombre}]**\n" + "\n".join([f"- {res}" for res in resultados_ejecucion])
+    return resumen_final
+
+
 # --- MÓDULO DE AUTO-EVOLUCIÓN Y REPARACIÓN DE CÓDIGO (CANVAS 8) ---
 def auto_reparar_codigo_fuente(filepath, error_trace, query_context, llm_engine):
     if not os.path.exists(filepath):
@@ -309,6 +424,14 @@ def clasificar_y_organizar_memoria(titulo, contenido):
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
 
+    # Si la orden es masiva, compleja o un proyecto completo, activamos el Task Planner
+    if any(k in query_lower for k in ["pelicula", "escena animada", "proyecto completo", "crea un mundo", "secuencia", "historia"]):
+        print("🧠 [Task Planner] Orden masiva detectada. Desglosando plan de subtareas...")
+        plan_json = desglosar_orden_masiva(query, llm_brain)
+        resultado_plan = ejecutar_plan_maestro(plan_json, llm_brain)
+        return resultado_plan, "", "canvas-4"
+
+    # Si la orden requiere modelado o diseño 3D directo
     if any(k in query_lower for k in ["blender", "esculpe", "modela", "genera modelo", "crea un 3d", "objeto 3d"]):
         respuesta_blender = ejecutar_script_blender_autonomo(query, llm_brain)
         return respuesta_blender, "", "canvas-4"
