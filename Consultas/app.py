@@ -5,7 +5,6 @@ import subprocess
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
-from ddgs import DDGS
 from llama_cpp import Llama
 
 app = Flask(__name__)
@@ -17,10 +16,9 @@ MODEL_PATH = "sinddi_brain.gguf"
 # --- CARGA DEL CEREBRO NATIVO EN MEMORIA (AUTONOMÍA TOTAL) ---
 print("🧠 S.I.N.D.D.I. Core: Cargando el modelo GGUF directamente en RAM (CPU Ryzen)...")
 try:
-    # n_ctx optimizado para bajo consumo de RAM, n_threads ajustado para CPU multi-núcleo
     llm_brain = Llama(
         model_path=MODEL_PATH,
-        n_ctx=2048,
+        n_ctx=4096,
         n_threads=4,
         n_batch=512,
         verbose=False
@@ -38,7 +36,7 @@ def init_db():
                 "documentos": [], 
                 "internet": [], 
                 "historial": [], 
-                "errores_registrados": [{"id": 42, "error": "Variable no definida en app.js", "estado": "activo"}],
+                "errores_registrados": [],
                 "parches_pendientes": [],
                 "biblioteca_optimizada": {"3D_Assets": [], "Logica_Sistema": [], "Investigacion_Web": [], "General": []},
                 "escenas_activas": {}
@@ -70,64 +68,91 @@ def actualizar_db_completa(data):
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 
-# --- NÚCLEO DE ACCIÓN FÍSICA, TERMINAL Y BLENDER ---
+# --- NÚCLEO DE ACCIÓN FÍSICA, TERMINAL Y BLENDER AUTÓNOMO ---
 def ejecutar_comando_terminal(comando):
     try:
         if any(c in comando.lower() for c in ["rm -rf", "format", "del /f"]):
             return "⚠️ Comando bloqueado por protocolos de seguridad de S.I.N.D.D.I."
         
-        resultado = subprocess.run(comando, shell=True, capture_output=True, text=True, timeout=30)
+        resultado = subprocess.run(comando, shell=True, capture_output=True, text=True, timeout=45)
         salida = resultado.stdout if resultado.returncode == 0 else resultado.stderr
         save_to_db("historial", {"evento": "Ejecución de terminal / Blender", "cmd": comando, "estado": "Éxito" if resultado.returncode == 0 else "Error"})
         return salida.strip() or "Proceso ejecutado sin salida de texto."
     except Exception as e:
         return f"Error en la ejecución del proceso: {str(e)}"
 
-def ejecutar_script_blender(script_python="blender_script.py"):
+def ejecutar_script_blender_autonomo(query_usuario, llm_engine):
     blender_path = r"C:\Program Files\Blender Foundation\Blender 4.5\blender.exe"
     if not os.path.exists(blender_path):
         return f"⚠️ No se encontró Blender en la ruta especificada: {blender_path}"
-    if not os.path.exists(script_python):
-        return f"⚠️ El script '{script_python}' no existe en la carpeta madre."
 
-    comando = f'"{blender_path}" --background --python {script_python}'
-    return ejecutar_comando_terminal(comando)
+    prompt_sistema = (
+        "Eres S.I.N.D.D.I., un motor de inteligencia artificial especializado en desarrollo 3D y programación Python con Blender (bpy).\n"
+        "El usuario te pedirá una creación geométrica o animación.\n"
+        "Debes escribir un script de Python ejecutable usando 'bpy' que:\n"
+        "1. Limpie la escena actual (seleccione todo y lo borre).\n"
+        "2. Construya geométricamente lo que pide el usuario.\n"
+        "3. Aplique modificadores o materiales si corresponde.\n"
+        "4. Exporte obligatoriamente el resultado a un archivo GLB usando exactamente:\n"
+        "   bpy.ops.export_scene.gltf(filepath='asset_sinddi.glb', export_format='GLB')\n"
+        "DEVUELVE ÚNICAMENTE EL CÓDIGO PYTHON ENCERRADO EN UN BLOQUE MARKDOWN ```python ... ```. Sin explicaciones adicionales."
+    )
 
-def generar_script_blender_dinamico(query_lower):
-    geometria_bpy = "bpy.ops.mesh.primitive_uv_sphere_add(radius=1.5, segments=64, ring_count=32)"
-    nombre_asset = "Asset_Procedural"
-    
-    if "cubo" in query_lower or "caja" in query_lower:
-        geometria_bpy = "bpy.ops.mesh.primitive_cube_add(size=2.0)"
-        nombre_asset = "Cubo_Estructurado"
-    elif "mono" in query_lower or "suzanne" in query_lower:
-        geometria_bpy = "bpy.ops.mesh.primitive_monkey_add(size=2.0)"
-        nombre_asset = "Suzanne_Organic"
-    elif "cilindro" in query_lower:
-        geometria_bpy = "bpy.ops.mesh.primitive_cylinder_add(radius=1.0, depth=2.5, vertices=32)"
-        nombre_asset = "Cilindro_Dinamico"
-    elif "toro" in query_lower or "rosca" in query_lower:
-        geometria_bpy = "bpy.ops.mesh.primitive_torus_add(major_radius=1.2, minor_radius=0.4, ab_segments=48, ring_segments=32)"
-        nombre_asset = "Toroide_Avanzado"
+    messages = [
+        {"role": "system", "content": prompt_sistema},
+        {"role": "user", "content": query_usuario}
+    ]
 
-    codigo_blender = f"""import bpy
-bpy.ops.object.select_all(action='SELECT')
-bpy.ops.object.delete()
-{geometria_bpy}
-obj = bpy.context.active_object
-obj.name = "{nombre_asset}"
-modifier = obj.modifiers.new(name="Subdivision", type='SUBSURF')
-modifier.levels = 2
-modifier.render_levels = 2
-for f in obj.data.polygons:
-    f.use_smooth = True
-export_path = "asset_sinddi.glb"
-bpy.ops.export_scene.gltf(filepath=export_path, export_format='GLB')
-print("✨ [SINDDI Blender Studio] Modelo exportado: " + export_path)
-"""
-    with open("blender_script.py", "w", encoding="utf-8") as f:
-        f.write(codigo_blender)
-    return f"📝 Script de Blender generado dinámicamente para: '{nombre_asset}'."
+    max_intentos = 3
+    script_path = "blender_script.py"
+
+    for intento in range(max_intentos):
+        if not llm_engine:
+            return "⚠️ Error: El cerebro GGUF de S.I.N.D.D.I. no está inicializado."
+
+        try:
+            # Generación inteligente nativa
+            resp = llm_engine.create_chat_completion(
+                messages=messages,
+                temperature=0.3,
+                max_tokens=2048
+            )
+            contenido = resp['choices'][0]['message']['content']
+        except Exception as e:
+            return f"Error en inferencia del modelo para Blender: {e}"
+
+        # Extracción limpia de código mediante Expresiones Regulares
+        match = re.search(r"```python(.*?)```", contenido, DOTALL := re.DOTALL)
+        codigo_generado = match.group(1).strip() if match else contenido.strip()
+
+        with open(script_path, "w", encoding="utf-8") as f:
+            f.write(codigo_generado)
+
+        # Ejecución en Blender en modo headless (background)
+        comando = f'"{blender_path}" --background --python {script_path}'
+        resultado_proceso = subprocess.run(comando, shell=True, capture_output=True, text=True, timeout=60)
+
+        if resultado_proceso.returncode == 0:
+            save_to_db("historial", {"evento": "Blender Autónomo Éxito", "query": query_usuario, "intento": intento + 1})
+            return (
+                f"🎬 [S.I.N.D.D.I. Studio - Éxito Autónomo (Intento {intento + 1})]\n"
+                f"Script generado y probado con éxito. Asset exportado como 'asset_sinddi.glb'.\n\n"
+                f"```python\n{codigo_generado}\n```"
+            )
+        else:
+            error_traceback = resultado_proceso.stderr.strip()
+            if intento == max_intentos - 1:
+                return (
+                    f"❌ [S.I.N.D.D.I. Studio] Fallo crítico tras {max_intentos} intentos de auto-corrección.\n"
+                    f"Último error detectado:\n{error_traceback}\n\nCódigo fallido:\n```python\n{codigo_generado}\n```"
+                )
+            
+            # Bucle reflexivo: alimentamos el error de vuelta al chat del LLM para que se auto-repare
+            messages.append({"role": "assistant", "content": contenido})
+            messages.append({
+                "role": "user", 
+                "content": f"El script anterior generó este error en Blender:\n{error_traceback}\n\nCorrige el código Python (bpy) para solucionar el error. Devuelve únicamente el código corregido dentro de un bloque markdown ```python ... ```."
+            })
 
 
 # --- CLASIFICACIÓN DE CONOCIMIENTO (CANVAS 3) ---
@@ -155,21 +180,16 @@ def clasificar_y_organizar_memoria(titulo, contenido):
     actualizar_db_completa(db)
 
 
-# --- PROCESAMIENTO AUTÓNOMO CON LLAMA.CPP Y MEMORIA ---
+# --- PROCESAMIENTO AUTÓNOMO PRINCIPAL ---
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
 
-    # Comandos directos de control estructural o Blender
-    if "blender" in query_lower or "esculpe" in query_lower or "modela en" in query_lower or "genera modelo en blender" in query_lower:
-        info_script = generar_script_blender_dinamico(query_lower)
-        resultado_blender = ejecutar_script_blender("blender_script.py")
-        respuesta_final = (
-            f"🎬 [S.I.N.D.D.I. Studio - Generación Nativa con Blender 4.5]\n"
-            f"{info_script}\n\n```text\n{resultado_blender}\n```"
-        )
-        return respuesta_final, "", "canvas-4"
+    # Si la orden requiere modelado o diseño 3D, activamos el ciclo autónomo de Blender
+    if any(k in query_lower for k in ["blender", "esculpe", "modela", "genera modelo", "crea un 3d", "objeto 3d"]):
+        respuesta_blender = ejecutar_script_blender_autonomo(query, llm_brain)
+        return respuesta_blender, "", "canvas-4"
 
-    # Consulta en la biblioteca local de conocimiento (Canvas 3)
+    # Búsqueda en la biblioteca local optimizada (Canvas 3)
     biblioteca = memoria.get("biblioteca_optimizada", {})
     palabras_clave = [p for p in query_lower.split() if len(p) > 3]
     coincidencias = []
@@ -183,28 +203,31 @@ def procesar_respuesta_autonoma(query, memoria):
 
     contexto_memoria = "\n---\n".join(coincidencias[:2]) if coincidencias else "Sin registros previos específicos."
 
-    # INFERENCIA NATIVA USANDO EL CEREBRO GGUF DE S.I.N.D.D.I.
+    # INFERENCIA NATIVA CON EL CEREBRO GGUF (Qwen2.5-Coder)
     if llm_brain:
-        prompt_sistema = (
-            "Eres S.I.N.D.D.I., un sistema autónomo local avanzado especializado en programación, "
-            "desarrollo 3D y análisis técnico. Responde de forma precisa, técnica y directa en español.\n\n"
-            f"Contexto recuperado de la memoria local (memorie.json):\n{contexto_memoria}\n\n"
-            f"Usuario: {query}\nS.I.N.D.D.I.:"
-        )
+        messages = [
+            {
+                "role": "system", 
+                "content": (
+                    "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), un asistente autónomo local experto en programación full-stack, "
+                    "desarrollo 3D y análisis técnico. Responde con precisión quirúrgica, código limpio y directo en español.\n\n"
+                    f"Contexto recuperado de la memoria local (memorie.json):\n{contexto_memoria}"
+                )
+            },
+            {"role": "user", "content": query}
+        ]
         try:
-            output = llm_brain(
-                prompt_sistema,
-                max_tokens=400,
-                temperature=0.7,
-                stop=["Usuario:", "\n\n"]
+            output = llm_brain.create_chat_completion(
+                messages=messages,
+                max_tokens=800,
+                temperature=0.7
             )
-            respuesta_modelo = output['choices'][0]['text'].strip()
+            respuesta_modelo = output['choices'][0]['message']['content'].strip()
             clasificar_y_organizar_memoria(f"Interaccion_{query[:15]}", query)
             return respuesta_modelo, "", ""
         except Exception as e:
-            print(f"Error en inferencia LLM: {e}")
+            print(f"Error en inferencia LLM chat: {e}")
 
-    # Fallback clásico por si el modelo no está cargado
     return f"🧠 [Motor de Razonamiento S.I.N.D.D.I.]: Consulta asimilada localmente.", "", ""
 
 
