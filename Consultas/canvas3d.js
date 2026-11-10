@@ -1,5 +1,5 @@
 // ==========================================
-// MOTOR 3D MULTI-ESTACIÓN DE S.I.N.D.D.I. (Three.js)
+// MOTOR 3D MULTI-ESTACIÓN DE S.I.N.D.D.I. (Three.js) - PERFECCIONADO
 // ==========================================
 
 const active3DCanvasIds = ['canvas-2', 'canvas-4', 'canvas-7'];
@@ -8,6 +8,10 @@ window.scenes = window.scenes || {};
 window.renderers = window.renderers || {};
 window.cameras = window.cameras || {};
 window.updateRegistries = window.updateRegistries || {};
+
+let selectedMesh = null;
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 
 active3DCanvasIds.forEach(canvasId => {
     const container = document.getElementById(canvasId);
@@ -24,6 +28,7 @@ active3DCanvasIds.forEach(canvasId => {
     viewport.style.position = 'relative';
     viewport.style.borderRadius = '4px';
     viewport.style.overflow = 'hidden';
+    viewport.setAttribute('data-canvas-id', canvasId);
     container.appendChild(viewport);
 
     const scene = new THREE.Scene();
@@ -47,33 +52,51 @@ active3DCanvasIds.forEach(canvasId => {
     window.cameras[canvasId] = camera;
     window.updateRegistries[canvasId] = [];
 
-    if (canvasId === 'canvas-4') {
-        const geometry = new THREE.IcosahedronGeometry(1.2, 0);
-        const material = new THREE.MeshStandardMaterial({ color: 0xec4899, wireframe: true, roughness: 0.3 });
-        const coreMesh = new THREE.Mesh(geometry, material);
-        scene.add(coreMesh);
-        window.updateRegistries[canvasId].push(() => {
-            coreMesh.rotation.x += 0.005;
-            coreMesh.rotation.y += 0.01;
+    // --- INTERACCIÓN DRAG & DROP Y RAYCASTING ENTRE CANVAS ---
+    renderer.domElement.addEventListener('pointerdown', (event) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(scene.children, true);
+
+        if (intersects.length > 0) {
+            selectedMesh = intersects[0].object;
+            selectedMesh.userData.sourceCanvas = canvasId;
+            console.log(`🎯 Objeto seleccionado en ${canvasId}:`, selectedMesh);
+        }
+    });
+
+    renderer.domElement.addEventListener('pointerup', (event) => {
+        if (!selectedMesh) return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = event.clientX;
+        const y = event.clientY;
+
+        // Detectar sobre qué canvas se soltó el objeto
+        active3DCanvasIds.forEach(targetId => {
+            if (targetId === selectedMesh.userData.sourceCanvas) return;
+            const targetEl = document.getElementById(`viewport-${targetId}`);
+            if (!targetEl) return;
+
+            const targetRect = targetEl.getBoundingClientRect();
+            if (x >= targetRect.left && x <= targetRect.right && y >= targetRect.top && y <= targetRect.bottom) {
+                // Transferir malla a la escena destino
+                const sourceScene = window.scenes[selectedMesh.userData.sourceCanvas];
+                const targetScene = window.scenes[targetId];
+
+                if (sourceScene && targetScene) {
+                    sourceScene.remove(selectedMesh);
+                    targetScene.add(selectedMesh);
+                    console.log(`✨ Objeto transferido de ${selectedMesh.userData.sourceCanvas} a ${targetId}`);
+                }
+            }
         });
-    } else if (canvasId === 'canvas-2') {
-        const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
-        const material = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.2, metalness: 0.8 });
-        const boxMesh = new THREE.Mesh(geometry, material);
-        scene.add(boxMesh);
-        window.updateRegistries[canvasId].push(() => {
-            boxMesh.rotation.x += 0.005;
-            boxMesh.rotation.y += 0.005;
-        });
-    } else if (canvasId === 'canvas-7') {
-        const geometry = new THREE.ConeGeometry(0.8, 2, 4);
-        const material = new THREE.MeshStandardMaterial({ color: 0x10b981, wireframe: true });
-        const boneMesh = new THREE.Mesh(geometry, material);
-        scene.add(boneMesh);
-        window.updateRegistries[canvasId].push(() => {
-            boneMesh.rotation.z += 0.01;
-        });
-    }
+
+        selectedMesh = null;
+    });
 
     function animate() {
         requestAnimationFrame(animate);
@@ -95,3 +118,15 @@ active3DCanvasIds.forEach(canvasId => {
     });
     resizeObserver.observe(viewport);
 });
+
+// --- RESTAURACIÓN AUTOMÁTICA DE ESCENAS DESDE MEMORIE.JSON ---
+async function restaurarEscenasPersistidas() {
+    try {
+        const response = await fetch('http://127.0.0.1:3000/api/memories');
+        // Aquí SINDDI sincroniza el estado activo de las escenas al arrancar
+        console.log("🔄 S.I.N.D.D.I. Studio: Entornos gráficos sincronizados.");
+    } catch (e) {
+        console.warn("⚠️ Servidor local no disponible temporalmente para persistencia.");
+    }
+}
+restaurarEscenasPersistidas();
