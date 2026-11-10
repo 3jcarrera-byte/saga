@@ -7,10 +7,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnUpload = document.getElementById('btn-upload');
     const userInput = document.getElementById('user-input');
     const folderInput = document.getElementById('folder-input');
+    const chatFileInput = document.getElementById('chat-file-input');
 
     if (btnSend) btnSend.addEventListener('click', sendMessage);
     if (btnUpload) btnUpload.addEventListener('click', uploadPDF);
     if (folderInput) folderInput.addEventListener('change', handleFolderSelection);
+    if (chatFileInput) chatFileInput.addEventListener('change', handleChatFileSelection);
 
     if (userInput) {
         userInput.addEventListener('keydown', (e) => {
@@ -71,11 +73,9 @@ async function sendMessage() {
         if (data.code_3d && data.target_canvas && window.scenes && window.scenes[data.target_canvas]) {
             try {
                 const targetScene = window.scenes[data.target_canvas];
-                // Limpiar escena previa antes de renderizar el nuevo asset
                 while(targetScene.children.length > 0){ 
                     targetScene.remove(targetScene.children[0]); 
                 }
-                // Reagregar luces básicas de la estación
                 const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
                 targetScene.add(ambientLight);
                 const pointLight = new THREE.PointLight(0x38bdf8, 2, 50);
@@ -89,6 +89,16 @@ async function sendMessage() {
             }
         }
 
+        // --- AUTOMATIZACIÓN DE BLENDER DESDE EL CHAT ---
+        if (msg.toLowerCase().includes('genera modelo en blender') || msg.toLowerCase().includes('ejecuta blender')) {
+            setTimeout(() => {
+                if (typeof cargarAssetSinddiBlender === 'function') {
+                    cargarAssetSinddiBlender('canvas-4');
+                    printMessage('S.I.N.D.D.I.', '✨ Asset `.glb` generado por Blender recargado en el Canvas 4 con éxito.', 'bot');
+                }
+            }, 2000); // 2 segundos para asegurar que Blender escriba el archivo en disco
+        }
+
         loadKnowledgeLibrary();
         auditCodeCoherence();
         loadActiveParches();
@@ -100,19 +110,92 @@ async function sendMessage() {
     }
 }
 
+// --- GESTIÓN DE CARGA MULTIMODAL DESDE LA BARRA DE CHAT ---
+function handleChatFileSelection(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (let file of files) {
+        enviarArchivoMultimodal(file);
+    }
+    e.target.value = '';
+}
+
+async function enviarArchivoMultimodal(file) {
+    const box = document.getElementById('chat-messages');
+    let previewHtml = `📎 <strong>Archivo adjunto:</strong> ${file.name}`;
+    
+    if (file.type.startsWith('image/')) {
+        previewHtml = `<img src="${URL.createObjectURL(file)}" style="max-width: 150px; border-radius: 4px; display: block; margin-top: 5px;">`;
+    } else if (file.type.startsWith('video/')) {
+        previewHtml = `<video src="${URL.createObjectURL(file)}" controls style="max-width: 200px; display: block; margin-top: 5px;"></video>`;
+    }
+
+    printMessage('Tú', previewHtml, 'user');
+
+    const formData = new FormData();
+    formData.append('archivo', file);
+    formData.append('query', `Analiza y asimila este archivo: ${file.name}`);
+
+    const loadingId = 'sinddi-multimodal-' + Date.now();
+    if (box) {
+        box.innerHTML += `<div class="message bot" id="${loadingId}"><strong>S.I.N.D.D.I.:</strong> <em>Analizando metadatos y estructura de '${file.name}'...</em></div>`;
+        box.scrollTop = box.scrollHeight;
+    }
+
+    try {
+        const response = await fetch('http://localhost:3000/api/analizar-multimodal', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) throw new Error("Error al procesar archivo en el servidor");
+        const data = await response.json();
+
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+
+        printMessage('S.I.N.D.D.I.', data.response, 'bot');
+
+        if (data.code_3d && data.target_canvas && window.scenes && window.scenes[data.target_canvas]) {
+            try {
+                const targetScene = window.scenes[data.target_canvas];
+                while(targetScene.children.length > 0){ 
+                    targetScene.remove(targetScene.children[0]); 
+                }
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+                targetScene.add(ambientLight);
+                const pointLight = new THREE.PointLight(0x38bdf8, 2, 50);
+                pointLight.position.set(5, 5, 5);
+                targetScene.add(pointLight);
+
+                const evalFunc = new Function('scene', 'THREE', data.code_3d);
+                evalFunc(targetScene, THREE);
+            } catch (err) {
+                console.error("Error al renderizar el modelo 3D adjunto:", err);
+            }
+        }
+
+        loadKnowledgeLibrary();
+        auditCodeCoherence();
+    } catch (error) {
+        console.error("Error multimodal:", error);
+        const loadingEl = document.getElementById(loadingId);
+        if (loadingEl) loadingEl.remove();
+        printMessage('Sistema', `No se pudo analizar el archivo '${file.name}'.`, 'system');
+    }
+}
+
 // --- RESTAURACIÓN DE ESCENAS 3D PERSISTIDAS (MEMORIE.JSON) ---
 async function restaurarEscenasPersistidasEnFrontend() {
     try {
         const res = await fetch('http://localhost:3000/api/memories');
         if (!res.ok) return;
-        // S.I.N.D.D.I. sincroniza el entorno al arrancar la interfaz
         console.log("🔄 S.I.N.D.D.I. Studio: Estaciones 3D listas para sincronización.");
     } catch (e) {
         console.warn("⚠️ Servidor local no disponible para persistencia activa.");
     }
 }
 
-// Manejo de la selección de carpeta madre en Canvas 1 y ejecución en Canvas 6
 let loadedFilesMap = {};
 
 function handleFolderSelection(e) {
