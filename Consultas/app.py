@@ -269,6 +269,42 @@ if bpy.context.selected_objects:
     return resumen_final
 
 
+# --- MÓDULO DE APRENDIZAJE PERSISTENTE (CANVAS 1) ---
+def forzar_aprendizaje_y_persistencia(query_usuario, llm_engine):
+    prompt_sistema = (
+        "Eres S.I.N.D.D.I. Core. El usuario te ha ordenado aprender y estructurar conocimiento técnico sobre un tema.\n"
+        "No des explicaciones de tutorial genéricas. Sintetiza una guía técnica directa, limpia y estructurada "
+        "en formato Markdown que sirva como documentación interna permanente."
+    )
+    
+    try:
+        resp = llm_engine.create_chat_completion(
+            messages=[
+                {"role": "system", "content": prompt_sistema},
+                {"role": "user", "content": f"Genera la guía técnica de aprendizaje sobre: {query_usuario}"}
+            ],
+            max_tokens=1000,
+            temperature=0.3
+        )
+        contenido_guia = resp['choices'][0]['message']['content'].strip()
+        
+        nombre_base = re.sub(r'[^a-zA-Z0-9_-]', '_', query_usuario[:25])
+        filename = f"estudio_{nombre_base}.md"
+        
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(f"# S.I.N.D.D.I. - Módulo de Auto-Aprendizaje Persistente\n\n{contenido_guia}")
+            
+        clasificar_y_organizar_memoria(f"Estudio Autónomo: {query_usuario}", contenido_guia)
+        
+        return (
+            f"🧠 [S.I.N.D.D.I. Aprendizaje Persistente - Éxito]\n"
+            f"El sistema ha procesado la orden de aprendizaje, ha escrito el documento técnico "
+            f"y lo ha registrado físicamente en el archivo `{filename}` y en la biblioteca local del Canvas 3."
+        )
+    except Exception as e:
+        return f"⚠️ Error en el ciclo de aprendizaje autónomo: {e}"
+
+
 # --- MÓDULO DE AUTO-EVOLUCIÓN Y REPARACIÓN DE CÓDIGO (CANVAS 8) ---
 def auto_reparar_codigo_fuente(filepath, error_trace, query_context, llm_engine):
     if not os.path.exists(filepath):
@@ -423,6 +459,12 @@ def clasificar_y_organizar_memoria(titulo, contenido):
 # --- PROCESAMIENTO AUTÓNOMO PRINCIPAL ---
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
+
+    # Interceptar comandos de aprendizaje explícito para forzar persistencia real en Canvas 1 / Canvas 3
+    if query_lower.startswith("aprende ") or "aprende todo lo necesario" in query_lower:
+        print("🧠 [Canvas 1] Orden de aprendizaje persistente detectada.")
+        resultado_aprendizaje = forzar_aprendizaje_y_persistencia(query, llm_brain)
+        return resultado_aprendizaje, "", "canvas-1"
 
     # Si la orden es masiva, compleja o un proyecto completo, activamos el Task Planner
     if any(k in query_lower for k in ["pelicula", "escena animada", "proyecto completo", "crea un mundo", "secuencia", "historia"]):
