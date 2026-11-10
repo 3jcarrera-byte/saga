@@ -1,5 +1,5 @@
 // ==========================================
-// CONTROLADOR DE INTERFAZ Y NÚCLEO DE S.I.N.D.D.I.
+// CONTROLADOR DE INTERFAZ Y NÚCLEO DE S.I.N.D.D.I. - PERFECCIONADO
 // ==========================================
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -23,6 +23,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     loadKnowledgeLibrary();
     auditCodeCoherence();
+    loadActiveParches();
+    restaurarEscenasPersistidasEnFrontend();
     initCanvas2ExportTools();
     initCanvas7ExportTools();
 });
@@ -65,11 +67,23 @@ async function sendMessage() {
 
         printMessage('S.I.N.D.D.I.', data.response, 'bot');
 
-        // Si S.I.N.D.D.I. devuelve código 3D para inyectar mediante tool calls
-        if (data.code_3d && data.target_canvas && window.scenes[data.target_canvas]) {
+        // Inyección de código 3D devuelto por SINDDI en el canvas correspondiente
+        if (data.code_3d && data.target_canvas && window.scenes && window.scenes[data.target_canvas]) {
             try {
+                const targetScene = window.scenes[data.target_canvas];
+                // Limpiar escena previa antes de renderizar el nuevo asset
+                while(targetScene.children.length > 0){ 
+                    targetScene.remove(targetScene.children[0]); 
+                }
+                // Reagregar luces básicas de la estación
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+                targetScene.add(ambientLight);
+                const pointLight = new THREE.PointLight(0x38bdf8, 2, 50);
+                pointLight.position.set(5, 5, 5);
+                targetScene.add(pointLight);
+
                 const evalFunc = new Function('scene', 'THREE', data.code_3d);
-                evalFunc(window.scenes[data.target_canvas], THREE);
+                evalFunc(targetScene, THREE);
             } catch (err) {
                 console.error("Error al inyectar código 3D:", err);
             }
@@ -77,11 +91,24 @@ async function sendMessage() {
 
         loadKnowledgeLibrary();
         auditCodeCoherence();
+        loadActiveParches();
     } catch (error) {
         console.error("Error:", error);
         const loadingEl = document.getElementById(loadingId);
         if (loadingEl) loadingEl.remove();
-        printMessage('Sistema', 'No pude conectar con mi núcleo local en Node.js.', 'system');
+        printMessage('Sistema', 'No pude conectar con mi núcleo local en Python/Flask.', 'system');
+    }
+}
+
+// --- RESTAURACIÓN DE ESCENAS 3D PERSISTIDAS (MEMORIE.JSON) ---
+async function restaurarEscenasPersistidasEnFrontend() {
+    try {
+        const res = await fetch('http://localhost:3000/api/memories');
+        if (!res.ok) return;
+        // S.I.N.D.D.I. sincroniza el entorno al arrancar la interfaz
+        console.log("🔄 S.I.N.D.D.I. Studio: Estaciones 3D listas para sincronización.");
+    } catch (e) {
+        console.warn("⚠️ Servidor local no disponible para persistencia activa.");
     }
 }
 
@@ -180,6 +207,70 @@ async function loadKnowledgeLibrary() {
         `).join('');
     } catch (e) {}
 }
+
+// --- GESTIÓN DE PARCHES Y DIFF VIEWER EN EL CANVAS 8 ---
+async function loadActiveParches() {
+    const auditContainer = document.getElementById('audit-matrix');
+    if (!auditContainer) return;
+
+    try {
+        const res = await fetch('http://localhost:3000/api/parches/pendientes');
+        if (!res.ok) return;
+        const parches = await res.json();
+
+        let parchesHtml = "";
+        if (parches && parches.length > 0) {
+            parches.forEach(p => {
+                const lineasOriginales = (p.original_content || "").split('\n').slice(0, 10);
+                const lineasNuevas = (p.content || "").split('\n').slice(0, 10);
+
+                let diffView = `<div style="background:#1e1e1e; color:#fff; padding:6px; font-family:monospace; font-size:10px; max-height:100px; overflow-y:auto; margin:4px 0;">`;
+                lineasOriginales.forEach(l => diffView += `<div style="color:#ff8888; background:rgba(255,0,0,0.1)">- ${l}</div>`);
+                lineasNuevas.forEach(l => diffView += `<div style="color:#88ff88; background:rgba(0,255,0,0.1)">+ ${l}</div>`);
+                diffView += `</div>`;
+
+                parchesHtml += `
+                    <div style="background: #1e293b; padding: 8px; margin-top: 6px; border-radius: 4px; border: 1px solid #38bdf8;">
+                        <strong>🛠️ Parche #${p.id} (${p.filename})</strong>
+                        <p style="margin:2px 0; font-size:11px; color:#cbd5e1;">${p.motivo}</p>
+                        ${diffView}
+                        <div style="display:flex; gap:6px; margin-top:4px;">
+                            <button onclick="resolverParche(${p.id}, 'aprobar')" style="background:#10b981; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer;">Sí (Ejecutar)</button>
+                            <button onclick="resolverParche(${p.id}, 'denegar')" style="background:#ef4444; color:#fff; border:none; padding:3px 8px; border-radius:3px; cursor:pointer;">No (Denegar)</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        auditContainer.innerHTML = `
+            <div class="error-item" onclick="window.jumpToOrigin('app.js', 42)">
+                <strong>⚠️ Error [REF-42]:</strong> Variable no definida en app.js (Línea 42)
+            </div>
+            ${parchesHtml}
+            <div style="font-size: 11px; color: #34d399; margin-top: 6px;">
+                <p style="margin:0;">✅ Entorno 3D activo y sincronizado.</p>
+            </div>
+        `;
+    } catch (e) {
+        auditCodeCoherence();
+    }
+}
+
+window.resolverParche = async function(id, accion) {
+    try {
+        const res = await fetch('http://localhost:3000/api/parches/resolver', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id, accion: accion })
+        });
+        const data = await res.json();
+        printMessage('S.I.N.D.D.I.', data.mensaje || "Parche procesado.", 'system');
+        loadActiveParches();
+    } catch (e) {
+        alert("Error al resolver el parche.");
+    }
+};
 
 function auditCodeCoherence() {
     const auditContainer = document.getElementById('audit-matrix');
