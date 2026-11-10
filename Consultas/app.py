@@ -8,6 +8,8 @@ import threading
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
+import numpy as np
+from sentence_transformers import SentenceTransformer
 from llama_cpp import Llama
 
 app = Flask(__name__)
@@ -15,6 +17,7 @@ CORS(app)
 
 DB_PATH = "memorie.json"
 MODEL_PATH = "sinddi_brain.gguf"
+VECTOR_DB_PATH = "vectores_memoria.npy"
 
 # --- CARGA DEL CEREBRO NATIVO EN MEMORIA (AUTONOMÍA TOTAL) ---
 print("🧠 S.I.N.D.D.I. Core: Cargando el modelo GGUF directamente en RAM (CPU Ryzen)...")
@@ -31,6 +34,15 @@ except Exception as e:
     llm_brain = None
     print(f"⚠️ S.I.N.D.D.I. Core: No se pudo cargar '{MODEL_PATH}'. Asegúrate de tener el archivo en la carpeta madre. Error: {e}")
 
+# --- INICIALIZACIÓN DEL MOTOR RAG VECORIAL (NUMPY) ---
+print("🧬 S.I.N.D.D.I. RAG: Cargando modelo de vectores local en CPU...")
+try:
+    embedder = SentenceTransformer('all-MiniLM-L6-v2')
+    print("✨ S.I.N.D.D.I. RAG: Motor vectorial inicializado con éxito.")
+except Exception as e:
+    embedder = None
+    print(f"⚠️ S.I.N.D.D.I. RAG Error: No se pudo cargar el modelo vectorial: {e}")
+
 
 def init_db():
     if not os.path.exists(DB_PATH):
@@ -42,6 +54,7 @@ def init_db():
                 "errores_registrados": [],
                 "parches_pendientes": [],
                 "biblioteca_optimizada": {"3D_Assets": [], "Logica_Sistema": [], "Investigacion_Web": [], "General": []},
+                "vector_store_meta": [],
                 "escenas_activas": {}
             }, f, indent=4)
 
@@ -69,6 +82,65 @@ def read_db():
 def actualizar_db_completa(data):
     with open(DB_PATH, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+# --- SUBSISTEMA RAG MATEMÁTICO (NUMPY & COSINE SIMILARITY) ---
+def guardar_vector_memoria(texto, metadata):
+    if not embedder:
+        return
+    
+    vector = embedder.encode(texto).astype(np.float32)
+    
+    db = read_db()
+    if "vector_store_meta" not in db:
+        db["vector_store_meta"] = []
+    
+    db["vector_store_meta"].append({
+        "metadata": metadata,
+        "extracto": texto[:400],
+        "index": len(db["vector_store_meta"])
+    })
+    actualizar_db_completa(db)
+    
+    if os.path.exists(VECTOR_DB_PATH):
+        matriz_actual = np.load(VECTOR_DB_PATH)
+        matriz_nueva = np.vstack([matriz_actual, vector])
+    else:
+        matriz_nueva = np.array([vector], dtype=np.float32)
+        
+    np.save(VECTOR_DB_PATH, matriz_nueva)
+
+def buscar_contexto_semantico(query, top_k=2):
+    if not embedder or not os.path.exists(VECTOR_DB_PATH):
+        return "Sin registros vectoriales previos."
+        
+    db = read_db()
+    metadatos = db.get("vector_store_meta", [])
+    if not metadatos:
+        return "Sin registros vectoriales previos."
+        
+    vector_query = embedder.encode(query).astype(np.float32)
+    matriz_vectores = np.load(VECTOR_DB_PATH)
+    
+    dot_product = np.dot(matriz_vectores, vector_query)
+    norm_matriz = np.linalg.norm(matriz_vectores, axis=1)
+    norm_query = np.linalg.norm(vector_query)
+    
+    norm_matriz[norm_matriz == 0] = 1e-10
+    if norm_query == 0:
+        norm_query = 1e-10
+        
+    similitudes = dot_product / (norm_matriz * norm_query)
+    mejores_indices = np.argsort(similitudes)[::-1][:top_k]
+    
+    resultados = []
+    for idx in mejores_indices:
+        score = similitudes[idx]
+        if score > 0.20:
+            item = metadatos[idx]
+            resultados.append(f"📖 **[Similitud Semántica: {score:.2f} - {item['metadata']}]**:\n{item['extracto']}")
+            
+    return "\n---\n".join(resultados) if resultados else "Sin coincidencias semánticas relevantes."
 
 
 # --- NÚCLEO DE ACCIÓN FÍSICA, TERMINAL Y BLENDER AUTÓNOMO ---
@@ -269,7 +341,7 @@ if bpy.context.selected_objects:
     return resumen_final
 
 
-# --- MÓDULO DE APRENDIZAJE PERSISTENTE (CANVAS 1) ---
+# --- MÓDULO DE APRENDIZAJE PERSISTENTE Y VECTORIAL (CANVAS 1) ---
 def forzar_aprendizaje_y_persistencia(query_usuario, llm_engine):
     prompt_sistema = (
         "Eres S.I.N.D.D.I. Core. El usuario te ha ordenado aprender y estructurar conocimiento técnico sobre un tema.\n"
@@ -294,12 +366,14 @@ def forzar_aprendizaje_y_persistencia(query_usuario, llm_engine):
         with open(filename, "w", encoding="utf-8") as f:
             f.write(f"# S.I.N.D.D.I. - Módulo de Auto-Aprendizaje Persistente\n\n{contenido_guia}")
             
+        # Almacenar en la base vectorial RAG de Numpy
+        guardar_vector_memoria(contenido_guia, f"Estudio Autónomo: {query_usuario}")
         clasificar_y_organizar_memoria(f"Estudio Autónomo: {query_usuario}", contenido_guia)
         
         return (
-            f"🧠 [S.I.N.D.D.I. Aprendizaje Persistente - Éxito]\n"
-            f"El sistema ha procesado la orden de aprendizaje, ha escrito el documento técnico "
-            f"y lo ha registrado físicamente en el archivo `{filename}` y en la biblioteca local del Canvas 3."
+            f"🧠 [S.I.N.D.D.I. Aprendizaje Persistente - Éxito RAG]\n"
+            f"El sistema ha procesado la orden, escrito el documento técnico en `{filename}` "
+            f"y vectorizado matemáticamente el conocimiento en el motor matricial."
         )
     except Exception as e:
         return f"⚠️ Error en el ciclo de aprendizaje autónomo: {e}"
@@ -460,7 +534,7 @@ def clasificar_y_organizar_memoria(titulo, contenido):
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
 
-    # Interceptar comandos de aprendizaje explícito para forzar persistencia real en Canvas 1 / Canvas 3
+    # Interceptar comandos de aprendizaje explícito para forzar persistencia real y RAG
     if query_lower.startswith("aprende ") or "aprende todo lo necesario" in query_lower:
         print("🧠 [Canvas 1] Orden de aprendizaje persistente detectada.")
         resultado_aprendizaje = forzar_aprendizaje_y_persistencia(query, llm_brain)
@@ -478,18 +552,8 @@ def procesar_respuesta_autonoma(query, memoria):
         respuesta_blender = ejecutar_script_blender_autonomo(query, llm_brain)
         return respuesta_blender, "", "canvas-4"
 
-    biblioteca = memoria.get("biblioteca_optimizada", {})
-    palabras_clave = [p for p in query_lower.split() if len(p) > 3]
-    coincidencias = []
-    
-    for cat, items in biblioteca.items():
-        if isinstance(items, list):
-            for item in items:
-                texto_item = (item.get("titulo", "") + " " + item.get("extracto", "")).lower()
-                if any(kw in texto_item for kw in palabras_clave):
-                    coincidencias.append(f"📖 **[{cat} - {item.get('titulo')}]**:\n{item.get('extracto')}")
-
-    contexto_memoria = "\n---\n".join(coincidencias[:2]) if coincidencias else "Sin registros previos específicos."
+    # Recuperación de contexto mediante similitud semántica matemática (RAG con Numpy)
+    contexto_memoria = buscar_contexto_semantico(query, top_k=2)
 
     if llm_brain:
         messages = [
@@ -498,7 +562,7 @@ def procesar_respuesta_autonoma(query, memoria):
                 "content": (
                     "Eres S.I.N.D.D.I. (Sistema Inteligente No Dependiente De Internet), un asistente autónomo local experto en programación full-stack, "
                     "desarrollo 3D y análisis técnico. Responde con precisión quirúrgica, código limpio y directo en español.\n\n"
-                    f"Contexto recuperado de la memoria local (memorie.json):\n{contexto_memoria}"
+                    f"Contexto semántico recuperado de la memoria vectorial local:\n{contexto_memoria}"
                 )
             },
             {"role": "user", "content": query}
@@ -510,6 +574,7 @@ def procesar_respuesta_autonoma(query, memoria):
                 temperature=0.7
             )
             respuesta_modelo = output['choices'][0]['message']['content'].strip()
+            guardar_vector_memoria(query, f"Interaccion Usuario")
             clasificar_y_organizar_memoria(f"Interaccion_{query[:15]}", query)
             return respuesta_modelo, "", ""
         except Exception as e:
@@ -544,8 +609,9 @@ def handle_pdf():
     try:
         reader = pypdf.PdfReader(file)
         extracted_text = "".join([page.extract_text() for page in reader.pages])
+        guardar_vector_memoria(extracted_text, f"PDF: {file.filename}")
         clasificar_y_organizar_memoria(file.filename, extracted_text)
-        return jsonify({"message": f"Documento '{file.filename}' asimilado y categorizado en la biblioteca del Canvas 3."}), 200
+        return jsonify({"message": f"Documento '{file.filename}' asimilado, vectorizado y categorizado en la biblioteca del Canvas 3."}), 200
     except Exception as e:
         return jsonify({"error": "Error al procesar PDF"}), 500
 
@@ -587,6 +653,5 @@ def handle_canvas8_fix():
 
 if __name__ == '__main__':
     init_db()
-    # Arrancar el hilo centinela de vigilancia desatendida en segundo plano
     iniciar_hilo_centinela()
     app.run(port=3000, debug=True)
