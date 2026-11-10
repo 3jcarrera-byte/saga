@@ -4,7 +4,11 @@
     <meta charset="UTF-8">
     <title>E.V.A.I. - S.I.N.D.D.I. Core Studio</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Librería principal de Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Cargador oficial para archivos 3D pesados (.glb / .gltf) desde Blender -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
     <div class="ide-container">
@@ -48,15 +52,19 @@
             <h3>✨ Canvas 4: Entorno 3D & Avatar (Núcleo Visual)</h3>
         </div>
 
-        <!-- CANVAS 5: Chat con S.I.N.D.D.I. (Soporte >10,000 palabras) -->
+        <!-- CANVAS 5: Chat Multimodal con S.I.N.D.D.I. -->
         <div class="panel" id="canvas-5">
             <h3>💬 S.I.N.D.D.I. (Asistente Local)</h3>
             <div id="chat-messages" class="chat-messages">
-                <div class="message sinddi">Hola. Soy S.I.N.D.D.I., tu sistema autónomo. Controla los canvas desde aquí o chatea sin límites.</div>
+                <div class="message sinddi">Hola. Soy S.I.N.D.D.I., tu sistema autónomo. Controla los canvas, chatea, ejecuta Blender o adjunta archivos multimedia y 3D sin límites.</div>
             </div>
-            <div class="chat-input-area">
-                <textarea id="user-input" placeholder="Pregúntale a S.I.N.D.D.I. (admite consultas extensas)..."></textarea>
-                <button id="btn-send">Enviar</button>
+            
+            <!-- Barra de Diálogo Multimodal Optimizada -->
+            <div class="chat-input-area" style="display: flex; gap: 6px; align-items: center; padding: 6px;">
+                <input type="file" id="chat-file-input" style="display: none;" multiple accept="image/*,video/*,.pdf,.txt,.js,.py,.obj,.stl,.gltf,.glb">
+                <button onclick="document.getElementById('chat-file-input').click()" title="Adjuntar foto, video, documento o 3D" style="background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; padding: 8px 10px; border-radius: 4px; cursor: pointer; font-size: 14px;">📎</button>
+                <textarea id="user-input" placeholder="Pregúntale a S.I.N.D.D.I. o adjunta archivos..." style="flex: 1; resize: none; height: 36px; padding: 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 12px;"></textarea>
+                <button id="btn-send" style="background: #0284c7; color: #fff; border: none; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-weight: bold;">Enviar</button>
             </div>
         </div>
 
