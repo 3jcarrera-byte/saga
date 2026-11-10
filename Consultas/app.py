@@ -2,6 +2,7 @@ import os
 import json
 import re
 import subprocess
+import py_compile
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
@@ -111,7 +112,6 @@ def ejecutar_script_blender_autonomo(query_usuario, llm_engine):
             return "⚠️ Error: El cerebro GGUF de S.I.N.D.D.I. no está inicializado."
 
         try:
-            # Generación inteligente nativa
             resp = llm_engine.create_chat_completion(
                 messages=messages,
                 temperature=0.3,
@@ -121,14 +121,12 @@ def ejecutar_script_blender_autonomo(query_usuario, llm_engine):
         except Exception as e:
             return f"Error en inferencia del modelo para Blender: {e}"
 
-        # Extracción limpia de código mediante Expresiones Regulares
-        match = re.search(r"```python(.*?)```", contenido, DOTALL := re.DOTALL)
+        match = re.search(r"```python(.*?)```", contenido, re.DOTALL)
         codigo_generado = match.group(1).strip() if match else contenido.strip()
 
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(codigo_generado)
 
-        # Ejecución en Blender en modo headless (background)
         comando = f'"{blender_path}" --background --python {script_path}'
         resultado_proceso = subprocess.run(comando, shell=True, capture_output=True, text=True, timeout=60)
 
@@ -147,11 +145,98 @@ def ejecutar_script_blender_autonomo(query_usuario, llm_engine):
                     f"Último error detectado:\n{error_traceback}\n\nCódigo fallido:\n```python\n{codigo_generado}\n```"
                 )
             
-            # Bucle reflexivo: alimentamos el error de vuelta al chat del LLM para que se auto-repare
             messages.append({"role": "assistant", "content": contenido})
             messages.append({
                 "role": "user", 
                 "content": f"El script anterior generó este error en Blender:\n{error_traceback}\n\nCorrige el código Python (bpy) para solucionar el error. Devuelve únicamente el código corregido dentro de un bloque markdown ```python ... ```."
+            })
+
+
+# --- MÓDULO DE AUTO-EVOLUCIÓN Y REPARACIÓN DE CÓDIGO (CANVAS 8) ---
+def auto_reparar_codigo_fuente(filepath, error_trace, query_context, llm_engine):
+    if not os.path.exists(filepath):
+        return f"⚠️ Archivo objetivo no encontrado: {filepath}"
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        codigo_actual = f.read()
+
+    prompt_sistema = (
+        "Eres S.I.N.D.D.I. Core, un sistema experto en ingeniería de software y auto-refactorización de código.\n"
+        "Se te proporcionará un código fuente y un error (traceback) reportado en el Canvas 8.\n"
+        "Tu misión es analizar el error, corregir el código fuente para eliminar la falla de raíz, "
+        "y devolver ÚNICAMENTE el archivo completo corregido dentro de un bloque markdown ```python ... ```.\n"
+        "No rompas la arquitectura existente; mantén las importaciones y la lógica intactas."
+    )
+
+    prompt_usuario = (
+        f"--- ARCHIVO AFECTADO: {filepath} ---\n"
+        f"```python\n{codigo_actual}\n```\n\n"
+        f"--- ERROR CAPTURADO (CANVAS 8) ---\n{error_trace}\n\n"
+        f"Contexto adicional: {query_context}\n"
+        "Genera el código corregido completo:"
+    )
+
+    messages = [
+        {"role": "system", "content": prompt_sistema},
+        {"role": "user", "content": prompt_usuario}
+    ]
+
+    max_intentos = 3
+    for intento in range(max_intentos):
+        if not llm_engine:
+            return "⚠️ Cerebro GGUF no disponible para auto-corrección."
+
+        try:
+            resp = llm_engine.create_chat_completion(
+                messages=messages,
+                temperature=0.2,
+                max_tokens=2048
+            )
+            contenido = resp['choices'][0]['message']['content']
+        except Exception as e:
+            return f"Error en inferencia para auto-evolución: {e}"
+
+        match = re.search(r"```(?:python|javascript|js)?(.*?)```", contenido, re.DOTALL)
+        codigo_corregido = match.group(1).strip() if match else contenido.strip()
+
+        test_file_path = f"temp_patch_{filepath}"
+        with open(test_file_path, "w", encoding="utf-8") as f:
+            f.write(codigo_corregido)
+
+        sintaxis_valida = True
+        error_sintaxis = ""
+        
+        if filepath.endswith(".py"):
+            try:
+                py_compile.compile(test_file_path, doraise=True)
+            except Exception as syntax_err:
+                sintaxis_valida = False
+                error_sintaxis = str(syntax_err)
+
+        if sintaxis_valida:
+            os.replace(test_file_path, filepath)
+            save_to_db("parches_pendientes", {
+                "archivo": filepath,
+                "estado": "Aplicado y Verificado",
+                "intento": intento + 1,
+                "timestamp": "2026-11-10"
+            })
+            return (
+                f"🧬 [S.I.N.D.D.I. Auto-Evolución - Éxito]\n"
+                f"El archivo `{filepath}` ha sido auto-reparado y probado tras {intento + 1} intento(s).\n"
+                f"El error detectado en Canvas 8 ha sido neutralizado y el código está actualizado."
+            )
+        else:
+            if os.path.exists(test_file_path):
+                os.remove(test_file_path)
+
+            if intento == max_intentos - 1:
+                return f"❌ Fallo al auto-reparar `{filepath}` tras {max_intentos} intentos. Último error de sintaxis: {error_sintaxis}"
+
+            messages.append({"role": "assistant", "content": contenido})
+            messages.append({
+                "role": "user",
+                "content": f"El código propuesto generó un error de sintaxis al compilar:\n{error_sintaxis}\nCorrige el código nuevamente."
             })
 
 
@@ -278,6 +363,25 @@ def get_memories():
                         "details": item.get("extracto", "")
                     })
     return jsonify(formatted), 200
+
+
+# --- NUEVO ENDPOINT PARA CANVAS 8 (AUTO-REPARACIÓN DE CÓDIGO) ---
+@app.route('/api/canvas8/fix-error', methods=['POST'])
+def handle_canvas8_fix():
+    req_data = request.get_json(silent=True) or {}
+    filepath = req_data.get('filepath', 'app.py')
+    error_trace = req_data.get('error_trace', '')
+    user_query = req_data.get('query', 'Corrige este error detectado en el sistema.')
+
+    if not error_trace:
+        return jsonify({"error": "No se proporcionó el rastro del error (traceback)"}), 400
+
+    resultado_evolucion = auto_reparar_codigo_fuente(filepath, error_trace, user_query, llm_brain)
+
+    return jsonify({
+        "response": resultado_evolucion,
+        "target_canvas": "canvas-8"
+    }), 200
 
 
 if __name__ == '__main__':
