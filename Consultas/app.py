@@ -20,14 +20,17 @@ def init_db():
                 "historial": [], 
                 "errores_registrados": [{"id": 42, "error": "Variable no definida en app.js", "estado": "activo"}],
                 "parches_pendientes": [],
-                "biblioteca_optimizada": {}
+                "biblioteca_optimizada": {"3D_Assets": [], "Logica_Sistema": [], "Investigacion_Web": [], "General": []}
             }, f, indent=4)
 
 def save_to_db(key, entry):
     with open(DB_PATH, 'r+', encoding='utf-8') as f:
         data = json.load(f)
         if key not in data:
-            data[key] = [] if not isinstance(data.get(key), dict) else {}
+            if key == "biblioteca_optimizada":
+                data[key] = {"3D_Assets": [], "Logica_Sistema": [], "Investigacion_Web": [], "General": []}
+            else:
+                data[key] = []
         
         if isinstance(data[key], list):
             data[key].append(entry)
@@ -98,18 +101,17 @@ def aplicar_parche_directo(nombre_archivo, contenido):
 
 # --- BIBLIOTECA INTELIGENTE Y ORGANIZACIÓN DEL CANVAS 3 ---
 def clasificar_y_organizar_memoria(titulo, contenido):
-    """Organiza automáticamente los aprendizajes en categorías para optimizar la lectura de SINDDI."""
     db = read_db()
-    if "biblioteca_optimizada" not in db:
+    if "biblioteca_optimizada" not in db or not isinstance(db["biblioteca_optimizada"], dict):
         db["biblioteca_optimizada"] = {"3D_Assets": [], "Logica_Sistema": [], "Investigacion_Web": [], "General": []}
     
     categoria = "General"
     titulo_lower = titulo.lower()
-    if "3d" in titulo_lower or "modelo" in titulo_lower or "geometria" in titulo_lower or "canvas" in titulo_lower:
+    if "3d" in titulo_lower or "modelo" in titulo_lower or "geometria" in titulo_lower or "canvas" in titulo_lower or "asset" in titulo_lower:
         categoria = "3D_Assets"
-    elif "app" in titulo_lower or "error" in titulo_lower or "codigo" in titulo_lower:
+    elif "app" in titulo_lower or "error" in titulo_lower or "codigo" in titulo_lower or "parche" in titulo_lower:
         categoria = "Logica_Sistema"
-    elif "web" in titulo_lower or "busqueda" in titulo_lower:
+    elif "web" in titulo_lower or "busqueda" in titulo_lower or "internet" in titulo_lower:
         categoria = "Investigacion_Web"
 
     db["biblioteca_optimizada"][categoria].append({
@@ -133,11 +135,9 @@ def buscar_en_internet(query):
     except Exception as e:
         return "No se pudo conectar a internet."
 
-# --- MOTOR DE DIBUJO AVANZADO Y ANIMACIÓN 3D PBR ---
+# --- MOTOR 3D PROCEDURAL Y ANIMACIÓN PBR ---
 def generar_modelo_avanzado(query_lower):
-    """Genera mallas 3D complejas con animaciones suaves y texturas estructuradas."""
     color_hex = "0x00d2ff"
-    tipo_figura = "Modelo Avanzado PBR"
     
     if "rojo" in query_lower or "roja" in query_lower:
         color_hex = "0xff3366"
@@ -146,6 +146,60 @@ def generar_modelo_avanzado(query_lower):
     elif "dorado" in query_lower or "amarillo" in query_lower:
         color_hex = "0xffd700"
 
+    # Si se pide específicamente un rostro/cara/avatar
+    if "rostro" in query_lower or "cara" in query_lower or "avatar" in query_lower:
+        tipo_figura = "Rostro Amigable 3D (Grupo Procedural PBR)"
+        codigo_3d = f"""
+        const group = new THREE.Group();
+        
+        // Cabeza
+        const headGeo = new THREE.SphereGeometry(1.2, 32, 32);
+        const headMat = new THREE.MeshStandardMaterial({{ color: {color_hex}, roughness: 0.3, metalness: 0.5 }});
+        const head = new THREE.Mesh(headGeo, headMat);
+        group.add(head);
+
+        // Ojo Izquierdo
+        const eyeGeo = new THREE.SphereGeometry(0.2, 16, 16);
+        const eyeMat = new THREE.MeshStandardMaterial({{ color: 0xffffff, roughness: 0.1 }});
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.position.set(-0.4, 0.3, 1.0);
+        group.add(leftEye);
+
+        // Ojo Derecho
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        rightEye.position.set(0.4, 0.3, 1.0);
+        group.add(rightEye);
+
+        // Pupilas
+        const pupilGeo = new THREE.SphereGeometry(0.09, 16, 16);
+        const pupilMat = new THREE.MeshBasicMaterial({{ color: 0x000000 }});
+        const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
+        leftPupil.position.set(-0.4, 0.3, 1.18);
+        group.add(leftPupil);
+
+        const rightPupil = new THREE.Mesh(pupilGeo, pupilMat);
+        rightPupil.position.set(0.4, 0.3, 1.18);
+        group.add(rightPupil);
+
+        // Sonrisa
+        const smileGeo = new THREE.TorusGeometry(0.4, 0.06, 16, 32, Math.PI);
+        const smileMat = new THREE.MeshBasicMaterial({{ color: 0x000000 }});
+        const smile = new THREE.Mesh(smileGeo, smileMat);
+        smile.position.set(0, -0.2, 1.05);
+        smile.rotation.x = Math.PI;
+        group.add(smile);
+
+        scene.add(group);
+
+        function animarRostro() {{
+            requestAnimationFrame(animarRostro);
+            group.rotation.y = Math.sin(Date.now() * 0.002) * 0.3;
+        }}
+        animarRostro();
+        """
+        return codigo_3d, tipo_figura
+
+    # Geometrías estándar
     if "esfera" in query_lower:
         geometria = "SphereGeometry(1.2, 64, 64)"
         tipo_figura = "Esfera Orgánica PBR"
@@ -172,7 +226,6 @@ def generar_modelo_avanzado(query_lower):
     mesh.receiveShadow = true;
     scene.add(mesh);
     
-    // Animación de rotación fluida autónoma sincronizada
     function animarAsset() {{
         requestAnimationFrame(animarAsset);
         mesh.rotation.x += 0.005;
@@ -182,19 +235,55 @@ def generar_modelo_avanzado(query_lower):
     """
     return codigo_3d, tipo_figura
 
-# --- PROCESAMIENTO INTELIGENTE ---
+# --- PROCESAMIENTO INTELIGENTE Y DESAMBIGUACIÓN ---
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
-    documentos = memoria.get("documentos", [])
     
-    # 1. LIMPIEZA DE CANVAS (2, 4, 7)
-    if "canvas" in query_lower and ("borra" in query_lower or "limpia" in query_lower or "elimina" in query_lower):
-        match_canvas = re.search(r'canvas\s*([0-9]+)', query_lower)
-        num_canvas = match_canvas.group(1) if match_canvas else "2"
-        codigo_limpieza = "while(scene.children.length > 0){ scene.remove(scene.children[0]); }"
-        return f"🧹 [Canvas {num_canvas} Limpiado]\nEscena gráfica restablecida.", codigo_limpieza, f"canvas-{num_canvas}"
+    # 0. CONSULTAS ARQUITECTÓNICAS SOBRE EL ALMACENAMIENTO DEL CANVAS 3
+    if ("donde se guarda" in query_lower or "donde se almacena" in query_lower) and "canvas 3" in query_lower:
+        respuesta = (
+            "🗄️ [Arquitectura de Memoria - Canvas 3]\n"
+            "Todo el conocimiento asimilado (archivos PDF, búsquedas web e interacciones del chat) se guarda localmente en el archivo físico **`memorie.json`**.\n\n"
+            "S.I.N.D.D.I. lo estructura automáticamente bajo las ramas:\n"
+            "• `documentos`: Registros brutos y PDFs asimilados.\n"
+            "• `biblioteca_optimizada`: Categorización por `3D_Assets`, `Logica_Sistema`, `Investigacion_Web` y `General` para acelerar las lecturas."
+        )
+        return respuesta, "", ""
 
-    # 2. CONSULTAS DEL CANVAS 8 / DEPURADOR DE ERRORES Y AUTOCORRECCIÓN
+    codigo_3d_acumulado = ""
+    target_canvas_acumulado = ""
+    mensajes_respuesta = []
+
+    # 1. EVALUACIÓN Y EJECUCIÓN DE ÓRDENES DE LIMPIEZA DE CANVAS (2, 4, 7 o Múltiples)
+    if "canvas" in query_lower and any(w in query_lower for w in ["borra", "limpia", "elimina", "vacía"]):
+        if "todos los canvas" in query_lower or "canvas 3d" in query_lower:
+            codigo_3d_acumulado += "while(scene.children.length > 0){ scene.remove(scene.children[0]); }"
+            mensajes_respuesta.append("🧹 [Escenas 3D Restablecidas] Se vaciaron los elementos en los Canvas gráficos.")
+            target_canvas_acumulado = "canvas-2"
+        else:
+            match_canvas = re.search(r'canvas\s*([0-9]+)', query_lower)
+            num_canvas = match_canvas.group(1) if match_canvas else "2"
+            codigo_3d_acumulado += "while(scene.children.length > 0){ scene.remove(scene.children[0]); }"
+            mensajes_respuesta.append(f"🧹 [Canvas {num_canvas} Limpiado] Escena gráfica restablecida.")
+            target_canvas_acumulado = f"canvas-{num_canvas}"
+
+    # 2. EVALUACIÓN DE ÓRDENES 3D EN LA MISMA O NAVEGADA INSTRUCCIÓN
+    if any(v in query_lower for v in ["dibuja", "renderiza", "modela", "crea", "muestra"]) or ("canvas" in query_lower and any(f in query_lower for f in ["rostro", "cara", "avatar", "esfera", "cubo", "cuadrado", "cilindro"])):
+        match_canvas = re.search(r'canvas\s*([0-9]+)', query_lower)
+        num_canvas = match_canvas.group(1) if match_canvas else "4"
+        
+        script_3d, tipo_figura = generar_modelo_avanzado(query_lower)
+        codigo_3d_acumulado += ("\n" + script_3d if codigo_3d_acumulado else script_3d)
+        target_canvas_acumulado = f"canvas-{num_canvas}"
+        
+        clasificar_y_organizar_memoria(f"Asset_{tipo_figura}_Canvas{num_canvas}", f"Modelo 3D renderizado: {tipo_figura}")
+        mensajes_respuesta.append(f"🎨 [S.I.N.D.D.I. Studio - Render PBR (Canvas {num_canvas})]\nAsset generado: **{tipo_figura}** con animación fluida.")
+
+    # Si se procesaron acciones 3D o de limpieza en este flujo
+    if mensajes_respuesta:
+        return "\n\n".join(mensajes_respuesta), codigo_3d_acumulado, target_canvas_acumulado
+
+    # 3. CONSULTAS DEL CANVAS 8 / DEPURADOR DE ERRORES
     if "canvas 8" in query_lower or "error" in query_lower or "depurador" in query_lower or "corrige el error" in query_lower:
         codigo_parche = (
             "// Parche automático de S.I.N.D.D.I. para app.js\n"
@@ -209,7 +298,7 @@ def procesar_respuesta_autonoma(query, memoria):
         )
         return respuesta, "", "canvas-8"
 
-    # 3. GESTIÓN DE ARCHIVOS FÍSICOS
+    # 4. GESTIÓN DE ARCHIVOS FÍSICOS EN LA CARPETA MADRE
     if "archivo" in query_lower and ("borra" in query_lower or "elimina" in query_lower):
         match_nombre = re.search(r'(?:archivo|el archivo)\s+([a-zA-Z0-9_\-]+\.?[a-zA-Z0-9]*)', query_lower)
         nombre_a_borrar = match_nombre.group(1) if match_nombre else "logro.txt"
@@ -224,31 +313,15 @@ def procesar_respuesta_autonoma(query, memoria):
         nombre_txt = match_nombre.group(1) if match_nombre else "logro.txt"
         return f"🛠️ [Acción Ejecutada]\n{crear_archivo_local(nombre_txt, contenido_txt)}", "", ""
 
-    # 4. MOTOR DE DIBUJO 3D AVANZADO (Canvas 2, 4 o 7)
-    if any(verbo in query_lower for verbo in ["dibuja", "renderiza", "modela", "crea", "muestra"]) or ("canvas" in query_lower and any(fig in query_lower for fig in ["esfera", "cubo", "cuadrado", "cilindro", "objeto", "figura"])):
-        match_canvas = re.search(r'canvas\s*([0-9]+)', query_lower)
-        num_canvas = match_canvas.group(1) if match_canvas else "2"
-        
-        codigo_3d, tipo_figura = generar_modelo_avanzado(query_lower)
-        
-        clasificar_y_organizar_memoria(f"Asset_{tipo_figura}_Canvas{num_canvas}", f"Modelo 3D renderizado: {tipo_figura} con animación PBR.")
-
-        respuesta_texto = (
-            f"🎨 [S.I.N.D.D.I. Studio - Render PBR Avanzado (Canvas {num_canvas})]\n"
-            f"Asset generado: **{tipo_figura}** con iluminación y rotación sincronizada para el **Canvas {num_canvas}**:\n\n"
-            f"```javascript\n{codigo_3d}\n```"
-        )
-        return respuesta_texto, codigo_3d, f"canvas-{num_canvas}"
-
     # 5. BÚSQUEDA WEB
     if query_lower.startswith("busca en internet") or query_lower.startswith("investiga sobre"):
         termino = query_lower.replace("busca en internet sobre", "").replace("investiga sobre", "").strip() or query
         resultado_web = buscar_en_internet(termino)
         return f"🌐 [Exploración Web & Optimización de Biblioteca]\n{resultado_web}", "", ""
 
-    # 6. RAZONAMIENTO GENERAL CON CANVAS 3 OPTIMIZADO
+    # 6. RAZONAMIENTO CONVERSACIONAL Y APRENDIZAJE GENERAL
     clasificar_y_organizar_memoria(f"Interaccion_{query[:15]}", query)
-    return f"🧠 [Motor de Razonamiento - S.I.N.D.D.I.]\nProceso completado. Datos organizados y optimizados en la biblioteca del Canvas 3.", "", ""
+    return f"🧠 [Motor de Razonamiento - S.I.N.D.D.I.]\nProceso completado. Mensaje procesado y sincronizado en la base de conocimientos del Canvas 3.", "", ""
 
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
@@ -321,16 +394,17 @@ def handle_code_patch():
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
     memoria = read_db()
-    # Devolver biblioteca categorizada para el Canvas 3
     biblioteca = memoria.get("biblioteca_optimizada", {})
     formatted = []
-    for categoria, items in biblioteca.items():
-        for item in items:
-            formatted.append({
-                "concept": item["titulo"],
-                "topic": categoria,
-                "details": item["extracto"]
-            })
+    if isinstance(biblioteca, dict):
+        for categoria, items in biblioteca.items():
+            if isinstance(items, list):
+                for item in items:
+                    formatted.append({
+                        "concept": item.get("titulo", "Concepto"),
+                        "topic": categoria,
+                        "details": item.get("extracto", "")
+                    })
     return jsonify(formatted), 200
 
 @app.route('/api/upload', methods=['POST'])
