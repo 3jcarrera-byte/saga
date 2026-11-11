@@ -145,6 +145,52 @@ def buscar_contexto_semantico(query, top_k=2):
     return "\n---\n".join(resultados) if resultados else "Sin coincidencias semánticas relevantes."
 
 
+# --- BUCLE COGNITIVO (ReAct: REASON + ACT) ---
+def bucle_cognitivo_sinddi(query_usuario, llm_engine):
+    """
+    Ejecuta el Bucle Cognitivo de 4 Fases antes de actuar:
+    1. Verificación de Memoria (RAG)
+    2. Detección de Vacío
+    3. Adquisición de Conocimiento (Investigación sintética)
+    4. Consolidación en base vectorial
+    """
+    print(f"🧠 [Bucle Cognitivo ReAct] Evaluando orden: '{query_usuario}'")
+    
+    # Fase 1: Verificación de Memoria
+    contexto_previo = buscar_contexto_semantico(query_usuario, top_k=2)
+    
+    # Fase 2: Detección de Vacío
+    necesita_investigacion = "Sin coincidencias semánticas relevantes" in contexto_previo or len(contexto_previo) < 40
+    
+    conocimiento_externo = ""
+    if necesita_investigacion and llm_engine:
+        print("🔍 [Bucle Cognitivo] Vacío detectado en memoria. Iniciando investigación y adquisición de conocimiento...")
+        # Fase 3: Adquisición de Conocimiento
+        prompt_inv = (
+            f"Eres S.I.N.D.D.I. Core. El usuario solicita: '{query_usuario}'. "
+            "No posees este conocimiento específico registrado en tu RAG. "
+            "Genera una referencia técnica precisa, pasos lógicos o estructura de código necesaria para resolver esta tarea:"
+        )
+        try:
+            resp_inv = llm_engine.create_chat_completion(
+                messages=[{"role": "user", "content": prompt_inv}],
+                max_tokens=500,
+                temperature=0.3
+            )
+            conocimiento_externo = resp_inv['choices'][0]['message']['content'].strip()
+            
+            # Fase 4: Consolidación Inmediata
+            guardar_vector_memoria(conocimiento_externo, f"Investigación Autónoma: {query_usuario}")
+            clasificar_y_organizar_memoria(f"Investigacion_{query_usuario[:15]}", conocimiento_externo)
+            print("✨ [Bucle Cognitivo] Conocimiento adquirido, vectorizado y consolidado en disco.")
+        except Exception as e:
+            conocimiento_externo = f"Error en adquisición de conocimiento: {e}"
+    else:
+        print("✨ [Bucle Cognitivo] Conocimiento validado en memoria RAG local.")
+
+    return f"--- MEMORIA RAG ---\n{contexto_previo}\n\n--- ADQUISICIÓN / INVESTIGACIÓN ---\n{conocimiento_externo if necesita_investigacion else 'Base de conocimientos consolidada.'}"
+
+
 # --- NÚCLEO DE ACCIÓN FÍSICA, TERMINAL, BLENDER Y GODOT AUTÓNOMO ---
 def ejecutar_comando_terminal(comando):
     try:
@@ -164,271 +210,176 @@ def ejecutar_script_blender_autonomo(query_usuario, llm_engine):
         return f"⚠️ No se encontró Blender en la ruta especificada: {blender_path}"
 
     prompt_sistema = (
-        "Eres S.I.N.D.D.I., un motor de inteligencia artificial especializado en desarrollo 3D y programación Python con Blender (bpy).\n"
-        "Debes escribir un script de Python ejecutable usando 'bpy' que:\n"
-        "1. Limpie la escena actual.\n"
-        "2. Construya geométricamente lo que pide el usuario.\n"
-        "3. Exporte obligatoriamente el resultado a un archivo GLB usando exactamente:\n"
+        "Eres S.I.N.D.D.I., motor de IA especializado en desarrollo 3D y Python con Blender (bpy).\n"
+        "1. Limpia la escena actual.\n"
+        "2. Construye geométricamente lo pedido.\n"
+        "3. Exporte obligatoriamente a GLB con:\n"
         "   bpy.ops.export_scene.gltf(filepath='asset_sinddi.glb', export_format='GLB')\n"
-        "DEVUELVE ÚNICAMENTE EL CÓDIGO PYTHON ENCERRADO EN UN BLOQUE MARKDOWN ```python ... ```."
+        "DEVUELVE ÚNICAMENTE CÓDIGO PYTHON EN MARKDOWN ```python ... ```."
     )
-
-    messages = [
-        {"role": "system", "content": prompt_sistema},
-        {"role": "user", "content": query_usuario}
-    ]
-
+    messages = [{"role": "system", "content": prompt_sistema}, {"role": "user", "content": query_usuario}]
     script_path = "blender_script.py"
-    max_intentos = 3
 
-    for intento in range(max_intentos):
+    for intento in range(3):
         if not llm_engine:
             return "⚠️ Cerebro GGUF no inicializado."
         try:
             resp = llm_engine.create_chat_completion(messages=messages, temperature=0.3, max_tokens=2048)
             contenido = resp['choices'][0]['message']['content']
         except Exception as e:
-            return f"Error en inferencia para Blender: {e}"
+            return f"Error en Blender: {e}"
 
         match = re.search(r"```python(.*?)```", contenido, re.DOTALL)
-        codigo_generado = match.group(1).strip() if match else contenido.strip()
+        codigo = match.group(1).strip() if match else contenido.strip()
 
         with open(script_path, "w", encoding="utf-8") as f:
-            f.write(codigo_generado)
+            f.write(codigo)
 
-        comando = f'"{blender_path}" --background --python {script_path}'
-        resultado_proceso = subprocess.run(comando, shell=True, capture_output=True, text=True, timeout=60)
-
-        if resultado_proceso.returncode == 0:
-            save_to_db("historial", {"evento": "Blender Autónomo Éxito", "query": query_usuario})
-            return f"🎬 [Blender Studio - Éxito]\nAsset exportado como 'asset_sinddi.glb'.\n```python\n{codigo_generado}\n```"
+        res = subprocess.run(f'"{blender_path}" --background --python {script_path}', shell=True, capture_output=True, text=True, timeout=60)
+        if res.returncode == 0:
+            save_to_db("historial", {"evento": "Blender Éxito", "query": query_usuario})
+            return f"🎬 [Blender Studio - Éxito]\nAsset exportado como 'asset_sinddi.glb'.\n```python\n{codigo}\n```"
         else:
-            error_traceback = resultado_proceso.stderr.strip()
-            if intento == max_intentos - 1:
-                return f"❌ [Blender Studio] Fallo crítico:\n{error_traceback}"
+            err = res.stderr.strip()
+            if intento == 2:
+                return f"❌ [Blender Studio] Fallo crítico:\n{err}"
             messages.append({"role": "assistant", "content": contenido})
-            messages.append({"role": "user", "content": f"Error en Blender:\n{error_traceback}\nCorrige el script bpy."})
+            messages.append({"role": "user", "content": f"Error:\n{err}\nCorrige el script."})
 
 def ejecutar_script_godot_autonomo(query_usuario, llm_engine):
     if not os.path.exists(GODOT_PATH):
-        return f"⚠️ No se encontró Godot 4.4 en la ruta especificada: {GODOT_PATH}"
+        return f"⚠️ No se encontró Godot 4.4 en: {GODOT_PATH}"
 
-    prompt_sistema = (
-        "Eres S.I.N.D.D.I. Core, experto en Godot 4.4 y GDScript.\n"
-        "Escribe un script GDScript ejecutable en modo headless que configure nodos y valide la lógica del juego.\n"
-        "DEVUELVE ÚNICAMENTE EL CÓDIGO GDSCRIPT EN UN BLOQUE MARKDOWN ```gdscript ... ```."
-    )
-
-    messages = [
-        {"role": "system", "content": prompt_sistema},
-        {"role": "user", "content": query_usuario}
-    ]
-
+    prompt_sistema = "Eres S.I.N.D.D.I. Core, experto en Godot 4.4 y GDScript. Devuelve ÚNICAMENTE código GDScript en ```gdscript ... ```."
+    messages = [{"role": "system", "content": prompt_sistema}, {"role": "user", "content": query_usuario}]
     script_path = "godot_script.gd"
-    max_intentos = 3
 
-    for intento in range(max_intentos):
+    for intento in range(3):
         if not llm_engine:
-            return "⚠️ Cerebro GGUF no disponible para Godot."
+            return "⚠️ Cerebro GGUF no disponible."
         try:
             resp = llm_engine.create_chat_completion(messages=messages, temperature=0.3, max_tokens=2048)
             contenido = resp['choices'][0]['message']['content']
         except Exception as e:
-            return f"Error en inferencia para Godot: {e}"
+            return f"Error Godot: {e}"
 
         match = re.search(r"```(?:gdscript)?(.*?)```", contenido, re.DOTALL)
-        codigo_generado = match.group(1).strip() if match else contenido.strip()
+        codigo = match.group(1).strip() if match else contenido.strip()
 
         with open(script_path, "w", encoding="utf-8") as f:
-            f.write(codigo_generado)
+            f.write(codigo)
 
-        comando = f'"{GODOT_PATH}" --headless --script {script_path}'
-        resultado_proceso = subprocess.run(comando, shell=True, capture_output=True, text=True, timeout=45)
-
-        if resultado_proceso.returncode == 0:
-            save_to_db("historial", {"evento": "Godot 4.4 Autónomo Éxito", "query": query_usuario})
-            return f"🎮 [Godot 4.4 - Éxito Autónomo]\nScript GDScript ejecutado en modo headless.\n```gdscript\n{codigo_generado}\n```"
+        res = subprocess.run(f'"{GODOT_PATH}" --headless --script {script_path}', shell=True, capture_output=True, text=True, timeout=45)
+        if res.returncode == 0:
+            save_to_db("historial", {"evento": "Godot Éxito", "query": query_usuario})
+            return f"🎮 [Godot 4.4 - Éxito]\nScript ejecutado en headless.\n```gdscript\n{codigo}\n```"
         else:
-            error_traceback = resultado_proceso.stderr.strip() or resultado_proceso.stdout.strip()
-            if intento == max_intentos - 1:
-                return f"❌ [Godot 4.4] Fallo tras {max_intentos} intentos:\n{error_traceback}"
+            err = res.stderr.strip() or res.stdout.strip()
+            if intento == 2:
+                return f"❌ [Godot 4.4] Fallo:\n{err}"
             messages.append({"role": "assistant", "content": contenido})
-            messages.append({"role": "user", "content": f"Error en Godot 4.4:\n{error_traceback}\nCorrige el script GDScript."})
+            messages.append({"role": "user", "content": f"Error:\n{err}\nCorrige el script."})
 
 
-# --- MÓDULO TASK PLANNER (ORQUESTADOR DE PROYECTOS COMPLETOS) ---
+# --- TASK PLANNER ---
 def desglosar_orden_masiva(query_usuario, llm_engine):
-    prompt_sistema = (
-        "Eres el Task Planner principal de S.I.N.D.D.I.\n"
-        "Desglosa la orden compleja del usuario en un plan de subtareas secuenciales en JSON válido:\n"
-        "{\n"
-        '  "proyecto": "Nombre del proyecto",\n'
-        '  "subtareas": [\n'
-        '    {"paso": 1, "tipo": "guion", "descripcion": "Redacción o concepto"},\n'
-        '    {"paso": 2, "tipo": "blender_modelado", "descripcion": "Modelado 3D de assets"},\n'
-        '    {"paso": 3, "tipo": "godot_desarrollo", "descripcion": "Integración y lógica en Godot 4.4"}\n'
-        "  ]\n"
-        "}\n"
-        "Devuelve únicamente el JSON."
+    prompt = (
+        "Desglosa la orden compleja en JSON válido:\n"
+        '{"proyecto": "Nombre", "subtareas": [\n'
+        '  {"paso": 1, "tipo": "guion", "descripcion": "..."},\n'
+        '  {"paso": 2, "tipo": "blender_modelado", "descripcion": "..."},\n'
+        '  {"paso": 3, "tipo": "godot_desarrollo", "descripcion": "..."}\n'
+        ']}\nDevuelve solo JSON.'
     )
     try:
         if not llm_engine:
             return None
-        resp = llm_engine.create_chat_completion(
-            messages=[{"role": "system", "content": prompt_sistema}, {"role": "user", "content": query_usuario}],
-            temperature=0.2,
-            max_tokens=1024
-        )
+        resp = llm_engine.create_chat_completion(messages=[{"role": "system", "content": prompt}, {"role": "user", "content": query_usuario}], temperature=0.2, max_tokens=1024)
         contenido = resp['choices'][0]['message']['content'].strip()
         match = re.search(r"```(?:json)?(.*?)```", contenido, re.DOTALL)
-        json_str = match.group(1).strip() if match else contenido
-        return json.loads(json_str)
+        return json.loads(match.group(1).strip() if match else contenido)
     except Exception as e:
-        print(f"⚠️ Error en Task Planner: {e}")
-        return {
-            "proyecto": "Proyecto Directo",
-            "subtareas": [{"paso": 1, "tipo": "blender_modelado", "descripcion": query_usuario}]
-        }
+        print(f"⚠️ Error Task Planner: {e}")
+        return {"proyecto": "Directo", "subtareas": [{"paso": 1, "tipo": "blender_modelado", "descripcion": query_usuario}]}
 
-def ejecutar_plan_maestro(plan_maestro, llm_engine):
-    proyecto_nombre = plan_maestro.get("proyecto", "Proyecto_Sin_Nombre")
-    subtareas = plan_maestro.get("subtareas", [])
-    resultados_ejecucion = []
+def ejecutar_plan_maestro(plan, llm_engine):
+    proyecto = plan.get("proyecto", "Proyecto")
+    subtareas = plan.get("subtareas", [])
+    resultados = []
     
     db = read_db()
-    if "escenas_activas" not in db:
-        db["escenas_activas"] = {}
-    db["escenas_activas"][proyecto_nombre] = {"estado": "en curso", "timestamp": "2026-11-10"}
+    db.setdefault("escenas_activas", {})[proyecto] = {"estado": "en curso"}
     actualizar_db_completa(db)
 
     for tarea in subtareas:
-        paso = tarea.get("paso")
-        tipo = tarea.get("tipo")
-        desc = tarea.get("descripcion")
-        
+        paso, tipo, desc = tarea.get("paso"), tarea.get("tipo"), tarea.get("descripcion")
         print(f"⚙️ [Task Planner] Paso {paso} [{tipo}]: {desc}")
         
-        if tipo == "guion" or tipo == "texto":
-            try:
-                resp = llm_engine.create_chat_completion(messages=[{"role": "user", "content": f"Escribe el guion técnico para: {desc}"}], max_tokens=500)
-                texto = resp['choices'][0]['message']['content'].strip()
-                fname = f"guion_{paso}.txt"
-                with open(fname, "w", encoding="utf-8") as f:
-                    f.write(texto)
-                resultados_ejecucion.append(f"Paso {paso} [Guion]: Guardado en '{fname}'.")
-            except Exception as e:
-                resultados_ejecucion.append(f"Paso {paso} [Guion]: Error -> {e}")
+        if tipo in ["guion", "texto"]:
+            resp = llm_engine.create_chat_completion(messages=[{"role": "user", "content": f"Escribe guion técnico para: {desc}"}], max_tokens=500)
+            fname = f"guion_{paso}.txt"
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(resp['choices'][0]['message']['content'].strip())
+            resultados.append(f"Paso {paso} [Guion]: Guardado en '{fname}'.")
+        elif tipo in ["blender_modelado", "3d"]:
+            resultados.append(f"Paso {paso} [Blender]: {ejecutar_script_blender_autonomo(desc, llm_engine)}")
+        elif tipo in ["godot_desarrollo", "juego"]:
+            resultados.append(f"Paso {paso} [Godot]: {ejecutar_script_godot_autonomo(desc, llm_engine)}")
 
-        elif tipo == "blender_modelado" or tipo == "3d":
-            res_b = ejecutar_script_blender_autonomo(desc, llm_engine)
-            resultados_ejecucion.append(f"Paso {paso} [Blender]: {res_b}")
-
-        elif tipo == "godot_desarrollo" or tipo == "juego":
-            res_g = ejecutar_script_godot_autonomo(desc, llm_engine)
-            resultados_ejecucion.append(f"Paso {paso} [Godot 4.4]: {res_g}")
-
-    save_to_db("historial", {"evento": "Task Planner Ejecutado", "proyecto": proyecto_nombre, "detalles": resultados_ejecucion})
-    return f"🎯 **[S.I.N.D.D.I. Task Planner - {proyecto_nombre}]**\n" + "\n".join([f"- {r}" for r in resultados_ejecucion])
+    save_to_db("historial", {"evento": "Task Planner Ejecutado", "proyecto": proyecto, "detalles": resultados})
+    return f"🎯 **[Task Planner - {proyecto}]**\n" + "\n".join([f"- {r}" for r in resultados])
 
 
-# --- MÓDULO DE APRENDIZAJE PERSISTENTE Y RAG (CANVAS 1) ---
-def forzar_aprendizaje_y_persistencia(query_usuario, llm_engine):
-    prompt_sistema = "Eres S.I.N.D.D.I. Core. Sintetiza una guía técnica estructurada en formato Markdown."
-    try:
-        resp = llm_engine.create_chat_completion(
-            messages=[{"role": "system", "content": prompt_sistema}, {"role": "user", "content": f"Genera guía sobre: {query_usuario}"}],
-            max_tokens=1000,
-            temperature=0.3
-        )
-        contenido_guia = resp['choices'][0]['message']['content'].strip()
-        nombre_base = re.sub(r'[^a-zA-Z0-9_-]', '_', query_usuario[:25])
-        filename = f"estudio_{nombre_base}.md"
-        
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(f"# S.I.N.D.D.I. - Aprendizaje Persistente\n\n{contenido_guia}")
-            
-        guardar_vector_memoria(contenido_guia, f"Estudio Autónomo: {query_usuario}")
-        clasificar_y_organizar_memoria(f"Estudio Autónomo: {query_usuario}", contenido_guia)
-        
-        return f"🧠 [Aprendizaje Persistente Éxito]\nDocumento escrito en `{filename}` y vectorizado en RAG matricial."
-    except Exception as e:
-        return f"⚠️ Error en auto-aprendizaje: {e}"
-
-
-# --- MÓDULO DE AUTO-EVOLUCIÓN Y EDICIÓN QUIRÚRGICA (CANVAS 8) ---
+# --- EDICIÓN QUIRÚRGICA (CANVAS 8) ---
 def evolucionar_porcion_codigo(filepath, instruccion_cambio, llm_engine):
-    if not os.path.exists(filepath):
-        return f"⚠️ Archivo no encontrado: {filepath}"
-    if not llm_engine:
-        return "⚠️ Cerebro GGUF no disponible."
+    if not os.path.exists(filepath) or not llm_engine:
+        return "⚠️ Archivo no encontrado o cerebro no disponible."
 
-    # 1. Copia de seguridad preventiva instantánea
     shutil.copy(filepath, f"{filepath}.bak")
-
     with open(filepath, "r", encoding="utf-8") as f:
         codigo_actual = f.read()
 
-    prompt_sistema = (
-        "Eres S.I.N.D.D.I. Core, experto en edición quirúrgica de código Python.\n"
-        "No reescribas todo el archivo. Devuelve ÚNICAMENTE un objeto JSON válido con dos claves exactas:\n"
-        '{"buscar": "código exacto actual a reemplazar", "reemplazar": "código nuevo"}\n'
-        "El bloque 'buscar' debe coincidir carácter por carácter con el archivo original."
+    prompt = (
+        "Eres experto en edición quirúrgica de código Python.\n"
+        "Devuelve ÚNICAMENTE un JSON con dos claves:\n"
+        '{"buscar": "código exacto actual", "reemplazar": "código nuevo"}'
     )
-
-    messages = [
-        {"role": "system", "content": prompt_sistema},
-        {"role": "user", "content": f"ARCHIVO ACTUAL:\n{codigo_actual}\n\nINSTRUCCIÓN DE CAMBIO:\n{instruccion_cambio}"}
-    ]
-
     try:
-        resp = llm_engine.create_chat_completion(messages=messages, temperature=0.1, max_tokens=1024)
-        contenido = resp['choices'][0]['message']['content'].strip()
-        
-        match = re.search(r"```(?:json)?(.*?)```", contenido, re.DOTALL)
-        json_str = match.group(1).strip() if match else contenido
-        parche = json.loads(json_str)
+        resp = llm_engine.create_chat_completion(
+            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": f"CÓDIGO:\n{codigo_actual}\n\nCAMBIO:\n{instruccion_cambio}"}],
+            temperature=0.1, max_tokens=1024
+        )
+        match = re.search(r"```(?:json)?(.*?)```", resp['choices'][0]['message']['content'], re.DOTALL)
+        parche = json.loads(match.group(1).strip() if match else resp['choices'][0]['message']['content'].strip())
 
-        bloque_viejo = parche.get("buscar", "")
-        bloque_nuevo = parche.get("reemplazar", "")
-
-        if not bloque_viejo or bloque_viejo not in codigo_actual:
-            return "❌ [Auto-Evolución Quirúrgica] No se localizó el bloque exacto en el código. No se alteró el archivo."
-
-        # 2. Aplicar el reemplazo exacto
-        codigo_modificado = codigo_actual.replace(bloque_viejo, bloque_nuevo, 1)
+        viejo, nuevo = parche.get("buscar", ""), parche.get("reemplazar", "")
+        if not viejo or viejo not in codigo_actual:
+            return "❌ [Cirugía] No se localizó el bloque exacto en el código."
 
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write(codigo_modificado)
+            f.write(codigo_actual.replace(viejo, nuevo, 1))
 
-        # 3. Compilar para validar sintaxis
         py_compile.compile(filepath, doraise=True)
-        save_to_db("parches_pendientes", {"archivo": filepath, "estado": "Cirugía Quirúrgica Exitosa"})
-        return f"🧬 [Cirugía de Código Exitosa] Porción de código actualizada y verificada en `{filepath}`."
-
+        return f"🧬 [Cirugía Exitosa] Código actualizado en `{filepath}`."
     except Exception as e:
-        # Restaurar copia de seguridad si algo falla o rompe sintaxis
         shutil.copy(f"{filepath}.bak", filepath)
-        return f"⚠️ Error en la cirugía de código ({e}). Se ha restaurado la copia de seguridad intacta automáticamente."
-
+        return f"⚠️ Error en cirugía ({e}). Respaldo restaurado."
 
 def auto_reparar_codigo_fuente(filepath, error_trace, query_context, llm_engine):
-    return evolucionar_porcion_codigo(filepath, f"Corrige este error: {error_trace} - Contexto: {query_context}", llm_engine)
+    return evolucionar_porcion_codigo(filepath, f"Corrige el error: {error_trace} - Contexto: {query_context}", llm_engine)
 
 
-# --- HILO CENTINELA EN SEGUNDO PLANO ---
+# --- HILO CENTINELA ---
 def background_autonomous_sentinel():
-    print("👁️ S.I.N.D.D.I. Sentinel: Hilo de vigilancia autónoma activado.")
+    print("👁️ S.I.N.D.D.I. Sentinel: Activado.")
     time.sleep(15)
     while True:
         try:
             if os.path.exists("app.py"):
-                try:
-                    py_compile.compile("app.py", doraise=True)
-                except Exception as compile_err:
-                    if llm_brain:
-                        auto_reparar_codigo_fuente("app.py", str(compile_err), "Sentinel background check", llm_brain)
+                py_compile.compile("app.py", doraise=True)
         except Exception as e:
-            print(f"⚠️ Error en Sentinel: {e}")
+            if llm_brain:
+                auto_reparar_codigo_fuente("app.py", str(e), "Sentinel check", llm_brain)
         time.sleep(60)
 
 def iniciar_hilo_centinela():
@@ -438,38 +389,28 @@ def iniciar_hilo_centinela():
 # --- CLASIFICACIÓN DE CONOCIMIENTO (CANVAS 3) ---
 def clasificar_y_organizar_memoria(titulo, contenido):
     db = read_db()
-    if "biblioteca_optimizada" not in db or not isinstance(db["biblioteca_optimizada"], dict):
-        db["biblioteca_optimizada"] = {"3D_Assets": [], "Logica_Sistema": [], "Investigacion_Web": [], "General": []}
+    db.setdefault("biblioteca_optimizada", {"3D_Assets": [], "Logica_Sistema": [], "Investigacion_Web": [], "General": []})
     
-    categoria = "General"
+    cat = "General"
     tl, cl = titulo.lower(), contenido.lower()
-    if any(k in tl or k in cl for k in ["3d", "modelo", "blender", "shader", "glb"]):
-        categoria = "3D_Assets"
-    elif any(k in tl or k in cl for k in ["godot", "gdscript", "juego", "nodo"]):
-        categoria = "3D_Assets"
-    elif any(k in tl or k in cl for k in ["app", "error", "codigo", "flask", "script"]):
-        categoria = "Logica_Sistema"
-    elif any(k in tl or k in cl for k in ["web", "busqueda", "internet"]):
-        categoria = "Investigacion_Web"
+    if any(k in tl or k in cl for k in ["3d", "modelo", "blender", "shader", "glb"]): cat = "3D_Assets"
+    elif any(k in tl or k in cl for k in ["godot", "gdscript", "juego", "nodo"]): cat = "3D_Assets"
+    elif any(k in tl or k in cl for k in ["app", "error", "codigo", "flask"]): cat = "Logica_Sistema"
+    elif any(k in tl or k in cl for k in ["web", "busqueda", "investigacion"]): cat = "Investigacion_Web"
 
-    db["biblioteca_optimizada"][categoria].append({"titulo": titulo, "extracto": contenido[:400], "timestamp": "2026-11-10"})
+    db["biblioteca_optimizada"][cat].append({"titulo": titulo, "extracto": contenido[:400], "timestamp": "2026-11-10"})
     actualizar_db_completa(db)
 
 
-# --- PROCESAMIENTO AUTÓNOMO PRINCIPAL ---
+# --- PROCESAMIENTO AUTÓNOMO PRINCIPAL (CON BUCLE COGNITIVO) ---
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
 
-    # Interceptor para órdenes directas de auto-modificación o evolución desde el chat
     if any(k in query_lower for k in ["modifica tu codigo", "cambia tu codigo", "evoluciona", "actualiza app.py", "auto-repara"]):
         return evolucionar_porcion_codigo("app.py", query, llm_brain), "", "canvas-8"
 
-    if query_lower.startswith("aprende ") or "aprende todo lo necesario" in query_lower:
-        return forzar_aprendizaje_y_persistencia(query, llm_brain), "", "canvas-1"
-
     if any(k in query_lower for k in ["pelicula", "escena animada", "proyecto completo", "crea un mundo", "videojuego completo"]):
-        plan = desglosar_orden_masiva(query, llm_brain)
-        return ejecutar_plan_maestro(plan, llm_brain), "", "canvas-4"
+        return ejecutar_plan_maestro(desglosar_orden_masiva(query, llm_brain), llm_brain), "", "canvas-4"
 
     if any(k in query_lower for k in ["blender", "esculpe", "modela", "genera modelo", "crea un 3d", "objeto 3d"]):
         return ejecutar_script_blender_autonomo(query, llm_brain), "", "canvas-4"
@@ -477,17 +418,12 @@ def procesar_respuesta_autonoma(query, memoria):
     if any(k in query_lower for k in ["godot", "gdscript", "juego", "escena godot", "nodo"]):
         return ejecutar_script_godot_autonomo(query, llm_brain), "", "canvas-4"
 
-    contexto_memoria = buscar_contexto_semantico(query, top_k=2)
+    # APLICACIÓN DEL BUCLE COGNITIVO ReAct
+    contexto_cognitivo = bucle_cognitivo_sinddi(query, llm_brain)
 
     if llm_brain:
         messages = [
-            {
-                "role": "system", 
-                "content": (
-                    "Eres S.I.N.D.D.I., asistente autónomo local experto en programación, desarrollo 3D (Blender) y motores de juego (Godot 4.4).\n\n"
-                    f"Contexto semántico de la memoria vectorial:\n{contexto_memoria}"
-                )
-            },
+            {"role": "system", "content": f"Eres S.I.N.D.D.I., asistente autónomo local experto en programación y motores 3D.\n\n{contexto_cognitivo}"},
             {"role": "user", "content": query}
         ]
         try:
@@ -502,24 +438,18 @@ def procesar_respuesta_autonoma(query, memoria):
     return f"🧠 [S.I.N.D.D.I.]: Consulta asimilada localmente.", "", ""
 
 
-# --- ENDPOINTS HTTP PARA ENLAZAR EL FRONTEND (CHAT.JS) ---
+# --- ENDPOINTS HTTP ---
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
-    req_data = request.get_json(silent=True) or {}
-    user_message = (req_data.get('query') or req_data.get('message') or '').strip()
-    if not user_message:
+    data = request.get_json(silent=True) or {}
+    msg = (data.get('query') or data.get('message') or '').strip()
+    if not msg:
         return jsonify({"error": "Mensaje vacío"}), 400
 
     memoria = read_db()
-    bot_response, codigo_3d, target_canvas = procesar_respuesta_autonoma(user_message, memoria)
-
-    save_to_db("historial", {"user": user_message, "bot": bot_response})
-    return jsonify({
-        "response": bot_response, 
-        "code_3d": codigo_3d, 
-        "target_canvas": target_canvas
-    }), 200
-
+    resp, code_3d, canvas = procesar_respuesta_autonoma(msg, memoria)
+    save_to_db("historial", {"user": msg, "bot": resp})
+    return jsonify({"response": resp, "code_3d": code_3d, "target_canvas": canvas}), 200
 
 @app.route('/api/upload', methods=['POST'])
 def handle_pdf():
@@ -528,47 +458,35 @@ def handle_pdf():
     file = request.files['pdf']
     try:
         reader = pypdf.PdfReader(file)
-        extracted_text = "".join([page.extract_text() for page in reader.pages])
-        guardar_vector_memoria(extracted_text, f"PDF: {file.filename}")
-        clasificar_y_organizar_memoria(file.filename, extracted_text)
-        return jsonify({"message": f"Documento '{file.filename}' asimilado, vectorizado y categorizado en la biblioteca del Canvas 3."}), 200
+        text = "".join([p.extract_text() for p in reader.pages])
+        guardar_vector_memoria(text, f"PDF: {file.filename}")
+        clasificar_y_organizar_memoria(file.filename, text)
+        return jsonify({"message": f"Documento '{file.filename}' asimilado y vectorizado."}), 200
     except Exception as e:
-        return jsonify({"error": f"Error al procesar PDF: {e}"}), 500
-
+        return jsonify({"error": f"Error: {e}"}), 500
 
 @app.route('/api/memories', methods=['GET'])
 def get_memories():
     memoria = read_db()
-    biblioteca = memoria.get("biblioteca_optimizada", {})
+    lib = memoria.get("biblioteca_optimizada", {})
     formatted = []
-    if isinstance(biblioteca, dict):
-        for categoria, items in biblioteca.items():
+    if isinstance(lib, dict):
+        for cat, items in lib.items():
             if isinstance(items, list):
                 for item in items:
-                    formatted.append({
-                        "concept": item.get("titulo", "Concepto"),
-                        "topic": categoria,
-                        "details": item.get("extracto", "")
-                    })
+                    formatted.append({"concept": item.get("titulo", "Concepto"), "topic": cat, "details": item.get("extracto", "")})
     return jsonify(formatted), 200
-
 
 @app.route('/api/canvas8/fix-error', methods=['POST'])
 def handle_canvas8_fix():
-    req_data = request.get_json(silent=True) or {}
-    filepath = req_data.get('filepath', 'app.py')
-    error_trace = req_data.get('error_trace', '')
-    user_query = req_data.get('query', 'Corrige este error detectado en el sistema.')
-
-    if not error_trace:
-        return jsonify({"error": "No se proporcionó el rastro del error (traceback)"}), 400
-
-    resultado_evolucion = auto_reparar_codigo_fuente(filepath, error_trace, user_query, llm_brain)
-
-    return jsonify({
-        "response": resultado_evolucion,
-        "target_canvas": "canvas-8"
-    }), 200
+    data = request.get_json(silent=True) or {}
+    fp = data.get('filepath', 'app.py')
+    trace = data.get('error_trace', '')
+    query = data.get('query', 'Corrección desde Canvas 8')
+    if not trace:
+        return jsonify({"error": "Falta el rastro del error"}), 400
+    res = auto_reparar_codigo_fuente(fp, trace, query, llm_brain)
+    return jsonify({"response": res, "target_canvas": "canvas-8"}), 200
 
 
 if __name__ == '__main__':
