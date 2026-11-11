@@ -5,6 +5,7 @@ import subprocess
 import py_compile
 import time
 import threading
+import shutil
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pypdf
@@ -354,59 +355,64 @@ def forzar_aprendizaje_y_persistencia(query_usuario, llm_engine):
         return f"⚠️ Error en auto-aprendizaje: {e}"
 
 
-# --- MÓDULO DE AUTO-EVOLUCIÓN Y REPARACIÓN DE CÓDIGO (CANVAS 8) ---
-def auto_reparar_codigo_fuente(filepath, error_trace, query_context, llm_engine):
+# --- MÓDULO DE AUTO-EVOLUCIÓN Y EDICIÓN QUIRÚRGICA (CANVAS 8) ---
+def evolucionar_porcion_codigo(filepath, instruccion_cambio, llm_engine):
     if not os.path.exists(filepath):
         return f"⚠️ Archivo no encontrado: {filepath}"
+    if not llm_engine:
+        return "⚠️ Cerebro GGUF no disponible."
+
+    # 1. Copia de seguridad preventiva instantánea
+    shutil.copy(filepath, f"{filepath}.bak")
 
     with open(filepath, "r", encoding="utf-8") as f:
         codigo_actual = f.read()
 
     prompt_sistema = (
-        "Eres S.I.N.D.D.I. Core, experto en auto-refactorización de código.\n"
-        "Corrige el error del archivo y devuelve ÚNICAMENTE el código corregido dentro de un bloque markdown ```python ... ```."
+        "Eres S.I.N.D.D.I. Core, experto en edición quirúrgica de código Python.\n"
+        "No reescribas todo el archivo. Devuelve ÚNICAMENTE un objeto JSON válido con dos claves exactas:\n"
+        '{"buscar": "código exacto actual a reemplazar", "reemplazar": "código nuevo"}\n'
+        "El bloque 'buscar' debe coincidir carácter por carácter con el archivo original."
     )
-    prompt_usuario = f"--- ARCHIVO: {filepath} ---\n```python\n{codigo_actual}\n```\n\n--- ERROR ---\n{error_trace}\nContexto: {query_context}"
 
-    messages = [{"role": "system", "content": prompt_sistema}, {"role": "user", "content": prompt_usuario}]
-    max_intentos = 3
+    messages = [
+        {"role": "system", "content": prompt_sistema},
+        {"role": "user", "content": f"ARCHIVO ACTUAL:\n{codigo_actual}\n\nINSTRUCCIÓN DE CAMBIO:\n{instruccion_cambio}"}
+    ]
 
-    for intento in range(max_intentos):
-        if not llm_engine:
-            return "⚠️ Cerebro GGUF no disponible."
-        try:
-            resp = llm_engine.create_chat_completion(messages=messages, temperature=0.2, max_tokens=2048)
-            contenido = resp['choices'][0]['message']['content']
-        except Exception as e:
-            return f"Error en inferencia de auto-evolución: {e}"
+    try:
+        resp = llm_engine.create_chat_completion(messages=messages, temperature=0.1, max_tokens=1024)
+        contenido = resp['choices'][0]['message']['content'].strip()
+        
+        match = re.search(r"```(?:json)?(.*?)```", contenido, re.DOTALL)
+        json_str = match.group(1).strip() if match else contenido
+        parche = json.loads(json_str)
 
-        match = re.search(r"```(?:python|javascript|js)?(.*?)```", contenido, re.DOTALL)
-        codigo_corregido = match.group(1).strip() if match else contenido.strip()
+        bloque_viejo = parche.get("buscar", "")
+        bloque_nuevo = parche.get("reemplazar", "")
 
-        test_file = f"temp_patch_{filepath}"
-        with open(test_file, "w", encoding="utf-8") as f:
-            f.write(codigo_corregido)
+        if not bloque_viejo or bloque_viejo not in codigo_actual:
+            return "❌ [Auto-Evolución Quirúrgica] No se localizó el bloque exacto en el código. No se alteró el archivo."
 
-        sintaxis_valida = True
-        err_sintaxis = ""
-        if filepath.endswith(".py"):
-            try:
-                py_compile.compile(test_file, doraise=True)
-            except Exception as syntax_err:
-                sintaxis_valida = False
-                err_sintaxis = str(syntax_err)
+        # 2. Aplicar el reemplazo exacto
+        codigo_modificado = codigo_actual.replace(bloque_viejo, bloque_nuevo, 1)
 
-        if sintaxis_valida:
-            os.replace(test_file, filepath)
-            save_to_db("parches_pendientes", {"archivo": filepath, "estado": "Aplicado y Verificado"})
-            return f"🧬 [Auto-Evolución - Éxito]\nEl archivo `{filepath}` fue auto-reparado tras {intento + 1} intento(s)."
-        else:
-            if os.path.exists(test_file):
-                os.remove(test_file)
-            if intento == max_intentos - 1:
-                return f"❌ Fallo al auto-reparar `{filepath}`. Error: {err_sintaxis}"
-            messages.append({"role": "assistant", "content": contenido})
-            messages.append({"role": "user", "content": f"Error de sintaxis:\n{err_sintaxis}\nCorrige nuevamente."})
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(codigo_modificado)
+
+        # 3. Compilar para validar sintaxis
+        py_compile.compile(filepath, doraise=True)
+        save_to_db("parches_pendientes", {"archivo": filepath, "estado": "Cirugía Quirúrgica Exitosa"})
+        return f"🧬 [Cirugía de Código Exitosa] Porción de código actualizada y verificada en `{filepath}`."
+
+    except Exception as e:
+        # Restaurar copia de seguridad si algo falla o rompe sintaxis
+        shutil.copy(f"{filepath}.bak", filepath)
+        return f"⚠️ Error en la cirugía de código ({e}). Se ha restaurado la copia de seguridad intacta automáticamente."
+
+
+def auto_reparar_codigo_fuente(filepath, error_trace, query_context, llm_engine):
+    return evolucionar_porcion_codigo(filepath, f"Corrige este error: {error_trace} - Contexto: {query_context}", llm_engine)
 
 
 # --- HILO CENTINELA EN SEGUNDO PLANO ---
@@ -453,6 +459,10 @@ def clasificar_y_organizar_memoria(titulo, contenido):
 # --- PROCESAMIENTO AUTÓNOMO PRINCIPAL ---
 def procesar_respuesta_autonoma(query, memoria):
     query_lower = query.lower()
+
+    # Interceptor para órdenes directas de auto-modificación o evolución desde el chat
+    if any(k in query_lower for k in ["modifica tu codigo", "cambia tu codigo", "evoluciona", "actualiza app.py", "auto-repara"]):
+        return evolucionar_porcion_codigo("app.py", query, llm_brain), "", "canvas-8"
 
     if query_lower.startswith("aprende ") or "aprende todo lo necesario" in query_lower:
         return forzar_aprendizaje_y_persistencia(query, llm_brain), "", "canvas-1"
