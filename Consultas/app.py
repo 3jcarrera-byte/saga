@@ -214,7 +214,7 @@ def ejecutar_script_godot_autonomo(query_usuario, llm_engine):
 
     prompt_sistema = (
         "Eres S.I.N.D.D.I. Core, experto en Godot 4.4 y GDScript.\n"
-        "Escribe un script GDScript ejecutable en modo headless que configure nodos, cargue assets si corresponde y valide la lógica del juego.\n"
+        "Escribe un script GDScript ejecutable en modo headless que configure nodos y valide la lógica del juego.\n"
         "DEVUELVE ÚNICAMENTE EL CÓDIGO GDSCRIPT EN UN BLOQUE MARKDOWN ```gdscript ... ```."
     )
 
@@ -489,4 +489,79 @@ def procesar_respuesta_autonoma(query, memoria):
         except Exception as e:
             print(f"Error en inferencia LLM: {e}")
 
-    return f"🧠 [S.I.N.D.D.I.]: Consulta asimilada localmente.",
+    return f"🧠 [S.I.N.D.D.I.]: Consulta asimilada localmente.", "", ""
+
+
+# --- ENDPOINTS HTTP PARA ENLAZAR EL FRONTEND (CHAT.JS) ---
+@app.route('/api/chat', methods=['POST'])
+def handle_chat():
+    req_data = request.get_json(silent=True) or {}
+    user_message = (req_data.get('query') or req_data.get('message') or '').strip()
+    if not user_message:
+        return jsonify({"error": "Mensaje vacío"}), 400
+
+    memoria = read_db()
+    bot_response, codigo_3d, target_canvas = procesar_respuesta_autonoma(user_message, memoria)
+
+    save_to_db("historial", {"user": user_message, "bot": bot_response})
+    return jsonify({
+        "response": bot_response, 
+        "code_3d": codigo_3d, 
+        "target_canvas": target_canvas
+    }), 200
+
+
+@app.route('/api/upload', methods=['POST'])
+def handle_pdf():
+    if 'pdf' not in request.files:
+        return jsonify({"error": "No hay archivo PDF"}), 400
+    file = request.files['pdf']
+    try:
+        reader = pypdf.PdfReader(file)
+        extracted_text = "".join([page.extract_text() for page in reader.pages])
+        guardar_vector_memoria(extracted_text, f"PDF: {file.filename}")
+        clasificar_y_organizar_memoria(file.filename, extracted_text)
+        return jsonify({"message": f"Documento '{file.filename}' asimilado, vectorizado y categorizado en la biblioteca del Canvas 3."}), 200
+    except Exception as e:
+        return jsonify({"error": f"Error al procesar PDF: {e}"}), 500
+
+
+@app.route('/api/memories', methods=['GET'])
+def get_memories():
+    memoria = read_db()
+    biblioteca = memoria.get("biblioteca_optimizada", {})
+    formatted = []
+    if isinstance(biblioteca, dict):
+        for categoria, items in biblioteca.items():
+            if isinstance(items, list):
+                for item in items:
+                    formatted.append({
+                        "concept": item.get("titulo", "Concepto"),
+                        "topic": categoria,
+                        "details": item.get("extracto", "")
+                    })
+    return jsonify(formatted), 200
+
+
+@app.route('/api/canvas8/fix-error', methods=['POST'])
+def handle_canvas8_fix():
+    req_data = request.get_json(silent=True) or {}
+    filepath = req_data.get('filepath', 'app.py')
+    error_trace = req_data.get('error_trace', '')
+    user_query = req_data.get('query', 'Corrige este error detectado en el sistema.')
+
+    if not error_trace:
+        return jsonify({"error": "No se proporcionó el rastro del error (traceback)"}), 400
+
+    resultado_evolucion = auto_reparar_codigo_fuente(filepath, error_trace, user_query, llm_brain)
+
+    return jsonify({
+        "response": resultado_evolucion,
+        "target_canvas": "canvas-8"
+    }), 200
+
+
+if __name__ == '__main__':
+    init_db()
+    iniciar_hilo_centinela()
+    app.run(port=3000, debug=True)
